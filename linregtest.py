@@ -2,13 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import lstsq # Linear regression by least squares
 from datetime import datetime
-from utility_funcs import Currency, import_json_lines
+from utility_funcs import readCurrency, import_json_lines
 
 # Needs x (time) and y (sale price) data
 
-data = import_json_lines('buyable_simple.txt',encoding='utf_8', keep_nontimed_salehistory=False)
+data = import_json_lines('pagedata.txt',encoding='utf_16', keep_nontimed_salehistory=False)
 
-raw_metadata = data[1]
+raw_metadata = data[5]
 raw = raw_metadata['Sales from last month']
 print(raw)
 
@@ -16,7 +16,8 @@ startdate = raw[0][0]
 X = []
 Y = []
 for sale in raw:
-    X.append((sale[0] - startdate).days)
+    delta = (sale[0] - startdate)
+    X.append(delta.days + (delta.seconds//3600)/24)
     Y.append(float(sale[1]))
 
 print(X)
@@ -25,7 +26,7 @@ print(Y)
 X_week = []
 Y_week = []
 for subx,suby in zip(X,Y):
-    if subx >= 30-7:
+    if subx >= (30-7):
         X_week.append(subx)
         Y_week.append(suby)
 

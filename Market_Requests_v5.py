@@ -2,8 +2,6 @@
 
 # Author: Syris Norelli, snore001@ucr.edu
 # Last Updated: May 11, 2019
-#################### Last page stopped: 49
-
 
 ### TODO:
 ### Implement better fault tolerance for "NoSuchElementException"
@@ -19,7 +17,7 @@ import sys                                  # Input pages from command line
 from datetime import datetime, timedelta    # Non jury-rigged dates for volumetric sales
                                             # The intention is to only use items that turn over at LEAST daily
 import json                                 # Data logging
-from utility_funcs import Currency, import_json_lines
+from utility_funcs import readCurrency, import_json_lines
 
 ### Hyperparameters {
 general_url = 'https://steamcommunity.com/market/search?q=&category_730_ItemSet%5B%5D=any&category_730_ProPlayer%5B%5D=any&category_730_StickerCapsule%5B%5D=any&category_730_TournamentTeam%5B%5D=any&category_730_Weapon%5B%5D=any&category_730_Exterior%5B%5D=tag_WearCategory0&appid=730#p'
@@ -52,8 +50,7 @@ def cleanChart(data):
     if data == '': # No recent prices - rarely sold item
         return []
     better_data = eval(data) # JS has the same format lists as Python, so eval is fine
-    print(better_data)
-    better_data = [[x[0][:3],x[0][4:6],x[0][7:11],x[1]] for x in better_data] # Cuts date info into easily accessible bits
+    better_data = [[x[0][:3],x[0][4:6],x[0][7:11],x[0][12:14],x[1]] for x in better_data] # Cuts date info into easily accessible bits
     month_lookup = {'Jan': 1,
                     'Feb': 2,
                     'Mar': 3,
@@ -66,7 +63,7 @@ def cleanChart(data):
                     'Oct': 10,
                     'Nov': 11,
                     'Dec': 12}
-    better_data = [[datetime(year=int(x[2]),month=month_lookup[x[0]],day=int(x[1])),x[3]] for x in better_data]
+    better_data = [[datetime(year=int(x[2]),month=month_lookup[x[0]],day=int(x[1]), hour=int(x[3])),x[4]] for x in better_data]
 
     # Cuts data to recent data (within last 30 days of sales)
     last_month = datetime.now() - timedelta(days=30)
@@ -76,9 +73,9 @@ def cleanChart(data):
     
     return recent_data
 
-maindata = import_json_lines('pagedata.txt',utf_16=True)
+maindata = import_json_lines('pagedata.txt',encoding='utf_16',numlines=11)
 maindata_names = [x['Item Name'] for x in maindata]
-ignore_pages = set([x['Item Name'] for x in maindata if x['Sales/Day'] < 1 or ( x['Buy Rate'] >= x['Listings'][0]/1.15 ) ])
+ignore_pages = set([x['Item Name'] for x in maindata if x['Sales/Day'] < 1 or ( x['Buy Rate'] > x['Listings'][0]/1.15 ) ])
 
 browser = webdriver.Chrome(r'/home/order/Videos/chromedriver/chromedriver') # Linux
 find_css = browser.find_element_by_css_selector
@@ -175,7 +172,7 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
                 'Sales/Day': str(round(len(recent_data)/30, 2)),
                 'Buy Rate': buy_rate,
                 'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'Sales from last month': str([[x[0].strftime('%Y-%m-%d'),x[1]] for x in recent_data]),
+                'Sales from last month': str([[x[0].strftime('%Y-%m-%d %H'),x[1]] for x in recent_data]),
                 'Listings': str(itemized)
             }
 
@@ -189,7 +186,7 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
                 maindata[maindata_names.index(pagedata['Item Name'])] = pagedata
             
             if len(itemized) > 4: # Technically only > 1 is needed, but I don't want to waste my time with inefficient pricing
-                prettyjson = json.dumps(pagedata)
+                prettyjson = json.dumps(pagedata, indent=4)
                 if itemized[0]*1.16 < itemized[1]: # and float(pagedata['Sales/Day']) > 1:
                     print('        ','FOUND A SIMPLE BUYABLE ITEM @',round((itemized[1]/itemized[0]-1.15)*itemized[1],2),'%')
                     with open('buyable_simple.txt','a', encoding='utf-16') as f:
@@ -201,6 +198,7 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
             if price_elapsed < navigation_time: # No reason to wait if processing the price data already took awhile
                 time.sleep(navigation_time-price_elapsed)
         else:
+            print('    ','Ignored',item_name)
             skipped_item = True
     
     browser.get(page_url)
@@ -210,7 +208,8 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
     with open('pagedata.txt','w',encoding='utf_16') as f:
         pass
     for pagedata in maindata:
-        prettyjson = json.dumps(pagedata) # Had to remove indent=4 for reading the file later
+        stringified = {x:str(pagedata[x]) for x in pagedata}
+        prettyjson = json.dumps(stringified, indent=4)
         with open('pagedata.txt','a',encoding='utf_16') as f:
             f.write(prettyjson)
             f.write('\n')
