@@ -23,7 +23,7 @@ from utility_funcs import readCurrency, import_json_lines
 general_url = 'https://steamcommunity.com/market/search?q=&category_730_ItemSet%5B%5D=any&category_730_ProPlayer%5B%5D=any&category_730_StickerCapsule%5B%5D=any&category_730_TournamentTeam%5B%5D=any&category_730_Weapon%5B%5D=any&category_730_Exterior%5B%5D=tag_WearCategory0&appid=730#p'
 initial_page = int(sys.argv[1]) # 40
 final_page = int(sys.argv[2]) # 70 # Inclusive
-navigation_time = 5 # Global wait time between page loads
+navigation_time = 6 # Global wait time between page loads
 username = 'datafarmer001'
 password = 'u9hqgi3sl9'
 ### }
@@ -73,6 +73,22 @@ def cleanChart(data):
     
     return recent_data
 
+def sma(dataset, n):
+    if len(dataset) < n:
+        return 'N is too high for this dataset (' + str(len(dataset)) + ' < ' + str(n) + ')'
+    
+    avg_list = []
+    for i in range(0,len(dataset)-n):
+        avg = sum(dataset[i:i+n])/n
+        avg_list.append(avg)
+    return avg_list
+
+def remove_outliers(dataset,sigma):
+    # Remove all data points that are greater than sigma away from the mean
+    mean = sum(dataset)/len(dataset)
+    stdev = (sum([(x-mean)**2 for x in dataset])/len(dataset))**0.5
+    return [x for x in dataset if mean-sigma*stdev < x < mean+sigma*stdev]
+
 maindata = import_json_lines('pagedata.txt',encoding='utf_16',numlines=11)
 maindata_names = [x['Item Name'] for x in maindata]
 ignore_pages = set([x['Item Name'] for x in maindata if x['Sales/Day'] < 1 or ( x['Buy Rate'] > x['Listings'][0]/1.15 ) ])
@@ -87,9 +103,10 @@ time.sleep(3)
 username_box = find_css('#input_username')
 password_box = find_css('#input_password')
 username_box.send_keys(username)
+time.sleep(1)
 password_box.send_keys(password)
 
-time.sleep(1)
+time.sleep(3)
 
 sign_in = find_css('#login_btn_signin > button')
 sign_in.click()
@@ -176,22 +193,41 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
                 'Listings': str(itemized)
             }
 
-            print('    ' + str(itemno) + '.', item_name, itemized[0], pagedata["Sales/Day"])
-            
             if pagedata['Item Name'] not in maindata_names:
                 maindata.append(pagedata)
                 maindata_names.append(pagedata['Item Name'])
             else:
-                print('Sucessfully updated some old data!')
                 maindata[maindata_names.index(pagedata['Item Name'])] = pagedata
+                print('    ', 'Sucessfully updated some old data!')
             
-            if len(itemized) > 4: # Technically only > 1 is needed, but I don't want to waste my time with inefficient pricing
-                prettyjson = json.dumps(pagedata, indent=4)
-                if itemized[0]*1.16 < itemized[1]: # and float(pagedata['Sales/Day']) > 1:
-                    print('        ','FOUND A SIMPLE BUYABLE ITEM @',round((itemized[1]/itemized[0]-1.15)*itemized[1],2),'%')
-                    with open('buyable_simple.txt','a', encoding='utf-16') as f:
-                        f.write(prettyjson)
-                        f.write('\n')
+            # if len(itemized) > 4: # Technically only > 1 is needed, but I don't want to waste my time with inefficient pricing
+            #     prettyjson = json.dumps(pagedata, indent=4)
+            #     if itemized[0]*1.16 < itemized[1]: # and float(pagedata['Sales/Day']) > 1:
+            #         print('        ','FOUND A SIMPLE BUYABLE ITEM @',round((itemized[1]/itemized[0]-1.15)*itemized[1],2),'%')
+                    # with open('buyable_simple.txt','a', encoding='utf-16') as f:
+                    #     f.write(prettyjson)
+                    #     f.write('\n')
+            if recent_data: # Nonzero
+                sales = remove_outliers([x[1] for x in recent_data],1)
+                if len(sales) > 15:
+                    recentsales = sales[-7:]
+                    prediction = sum(recentsales)/len(recentsales)
+                    expected_profit = prediction/1.15 - itemized[0]
+                    if expected_profit > itemized[0]*-.05:
+                        # print('        ','Expected profit: $',round(expected_profit,2))
+                        print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+                        pagedata['Recent Month Data'] = recentsales
+                        pagedata['Prediction'] = prediction
+                        prettyjson = json.dumps(pagedata, indent=4)
+                        with open('buyable_complex.txt','a', encoding='utf-16') as f:
+                            f.write(prettyjson)
+                            f.write('\n')
+                    print('    ' + str(itemno) + '.', item_name, itemized[0], pagedata["Sales/Day"], round(expected_profit,2))
+                    
+                else:
+                    print('    ' + str(itemno) + '.', item_name, itemized[0], pagedata["Sales/Day"],'NESTP')
+            else:
+                print('    ' + str(itemno) + '.', item_name, itemized[0], pagedata["Sales/Day"],'NESTP')
             
             price_elapsed = time.time() - before_price_data
             
@@ -200,6 +236,8 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
         else:
             print('    ','Ignored',item_name)
             skipped_item = True
+            pagedata = maindata[maindata_names.index(item_name)]
+            
     
     browser.get(page_url)
     
@@ -208,6 +246,9 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
     with open('pagedata.txt','w',encoding='utf_16') as f:
         pass
     for pagedata in maindata:
+        if pagedata['Sales from last month']:
+            if type(pagedata['Sales from last month'][0][0]) == type(datetime(2017,9,17)):
+                pagedata['Sales from last month'] = str([[x[0].strftime('%Y-%m-%d %H'),x[1]] for x in pagedata['Sales from last month']])
         stringified = {x:str(pagedata[x]) for x in pagedata}
         prettyjson = json.dumps(stringified, indent=4)
         with open('pagedata.txt','a',encoding='utf_16') as f:

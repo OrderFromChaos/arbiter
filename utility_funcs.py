@@ -16,7 +16,7 @@ def readCurrency(money):
     else:
         raise Exception('Type must be one of [float, int, str]. Bad string: ' + str(repr(money)))
 
-def import_json_lines(filename, encoding='utf_16', keep_nontimed_salehistory=False, keep_as_string=False, numlines=1):
+def import_json_lines(filename, encoding='utf_16', keep_as_string=False, numlines=11):
     with open(filename, 'r', encoding=encoding) as f:
         data = f.readlines()
     if numlines == 1:

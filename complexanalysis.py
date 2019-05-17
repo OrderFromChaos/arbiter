@@ -1,6 +1,6 @@
 from utility_funcs import import_json_lines, readCurrency
 
-data = import_json_lines('pagedata.txt',numlines=11)
+data = import_json_lines('buyable_simple.txt',numlines=11)
 
 def sma(dataset, n):
     if len(dataset) < n:
@@ -23,6 +23,7 @@ for x in data:
     rawsales = [y[1] for y in x['Sales from last month']]
     if rawsales: # Nonzero
         sales = remove_outliers(rawsales,1)
+        x['Sales from last month'] = sales
         if len(sales) > 7:
             newdata.append(x)
 
@@ -32,7 +33,7 @@ smallest_listing = [min(x['Listings']) for x in newdata]
 buyprices = []
 profit_per_item = []
 for item in newdata:
-    recentPrices = [x[1] for x in item['Sales from last month'][-7:]]
+    recentPrices = [x for x in item['Sales from last month'][-7:]]
     avg = sum(recentPrices)/7
     buyprices.append(round(avg/1.15,2))
     profit_per_item.append(buyprices[-1] - min(item['Listings']))
