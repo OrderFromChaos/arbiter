@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: May 11, 2019
+# Last Updated: June 2, 2019
 
 ### TODO:
 ### Implement better fault tolerance for "NoSuchElementException"
@@ -11,13 +11,13 @@
 
 from selenium import webdriver              # Primary navigation of Steam price data. Used for login.
 from selenium.common.exceptions import NoSuchElementException # Used for the occasional page load failure.
-import time                                 # Treating Steam right (also not being kicked out)
-import math                                 # For math.floor() and math.ceil()s
+import time                                 # Page waits
 import sys                                  # Input pages from command line
-from datetime import datetime, timedelta    # Non jury-rigged dates for volumetric sales
-                                            # The intention is to only use items that turn over at LEAST daily
+from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import json                                 # Data logging
-from utility_funcs import readCurrency, import_json_lines
+from utility_funcs import readCurrency      # " $27.45" -> 27.45
+from utility_funcs import import_json_lines # Importing logged dataset
+# from analysis import ----
 
 ### Hyperparameters {
 general_url = 'https://steamcommunity.com/market/search?q=&category_730_ItemSet%5B%5D=any&category_730_ProPlayer%5B%5D=any&category_730_StickerCapsule%5B%5D=any&category_730_TournamentTeam%5B%5D=any&category_730_Weapon%5B%5D=any&category_730_Exterior%5B%5D=tag_WearCategory0&appid=730#p'
@@ -28,11 +28,8 @@ username = 'datafarmer001'
 password = 'u9hqgi3sl9'
 ### }
 
-# Automatically sets page traversal page_direction
-page_direction = [-1,1][initial_page < final_page]
-
-# -----------------------------------====Primary Functions====-----------------------------------
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# -----------------------------------====Data Cleaning Functions====-----------------------------------
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def cleanListing(mess,itemname):
     ### Sometimes Steam will dynamically show "Sold!" or the like when it sells at item. This prevents the parser from stumbling
@@ -42,36 +39,28 @@ def cleanListing(mess,itemname):
     numbers = set('0123456789.')
     return sorted([float(''.join([char for char in x if char in numbers])) for x in mess if x not in disallowed])
 
-def cleanChart(data):
-    ### According to year-ago me, this is apparently non-functional. I'm guessing it's missing a metric for volume evaluations.
-    
+def cleanVolumetric(data):
     # Parses data from the price chart on an item listing
     data = data[data.find('var line1')+10:data.find(']];')+2] # Gets all price data from chart
     if data == '': # No recent prices - rarely sold item
         return []
     better_data = eval(data) # JS has the same format lists as Python, so eval is fine
     better_data = [[x[0][:3],x[0][4:6],x[0][7:11],x[0][12:14],x[1]] for x in better_data] # Cuts date info into easily accessible bits
-    month_lookup = {'Jan': 1,
-                    'Feb': 2,
-                    'Mar': 3,
-                    'Apr': 4,
-                    'May': 5,
-                    'Jun': 6,
-                    'Jul': 7,
-                    'Aug': 8,
-                    'Sep': 9,
-                    'Oct': 10,
-                    'Nov': 11,
-                    'Dec': 12}
+    month_lookup = {'Jan': 1, 'Feb': 2, 'Mar': 3,
+                    'Apr': 4, 'May': 5, 'Jun': 6,
+                    'Jul': 7, 'Aug': 8, 'Sep': 9,
+                    'Oct': 10, 'Nov': 11, 'Dec': 12}
     better_data = [[datetime(year=int(x[2]),month=month_lookup[x[0]],day=int(x[1]), hour=int(x[3])),x[4]] for x in better_data]
 
     # Cuts data to recent data (within last 30 days of sales)
     last_month = datetime.now() - timedelta(days=30)
     now = datetime.now()
     recent_data = [x for x in better_data if last_month < x[0] < now]
-    # recent_prices = [x[1] for x in recent_data]
     
     return recent_data
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# -----------------------------------===============================-----------------------------------
 
 def sma(dataset, n):
     if len(dataset) < n:
@@ -122,6 +111,7 @@ if confirm_time < navigation_time:
     time.sleep(navigation_time-confirm_time)
 
 itemno = 0 # Initialization
+page_direction = [-1,1][initial_page < final_page] # Automatically sets page traversal page_direction
 # Switching directory pages
 for pageno in range(initial_page, final_page+page_direction ,page_direction):
     print('----------Page Number: ' + str(pageno) + ' ----------')
@@ -174,10 +164,9 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
             # print(itemized)
             itemno += 1
             
-            # Grab volumetric data for recent sales/prices (from chart). Fortunately already in USD.
-            # Ignoring these for now since the rest runs stably
+            # Grab volumetric data for recent sales/prices (from chart).
             volumetrics = find_css('body > div.responsive_page_frame.with_header > div.responsive_page_content > div.responsive_page_template_content')
-            recent_data = cleanChart(volumetrics.get_attribute('outerHTML'))
+            recent_data = cleanVolumetric(volumetrics.get_attribute('outerHTML'))
             # print('Recent prices:', recent_prices)
             
             item_split = item_name.split(' ')
