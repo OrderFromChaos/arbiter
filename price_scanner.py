@@ -3,26 +3,19 @@
 # Author: Syris Norelli, snore001@ucr.edu
 # Last Updated: June 2, 2019
 
-### TODO:
-### Implement better fault tolerance for "NoSuchElementException"
-### Implement "market disruption" indication based on distribution of prices
-### Implement predictions of profit based on previous value
-### Change find_css to account for nosuchelementexception
+### PURPOSE:
+### This code scans over already found URLs for arbitrage opportunities.
 
 from selenium import webdriver              # Primary navigation of Steam price data. Used for login.
 from selenium.common.exceptions import NoSuchElementException # Used for the occasional page load failure.
 import time                                 # Page waits
-import sys                                  # Input pages from command line
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
-import json                                 # Data logging
+import json                                 # Data logging - update database
 from utility_funcs import readCurrency      # " $27.45" -> 27.45
 from utility_funcs import import_json_lines # Importing logged dataset
-# from analysis import ----
+# from analysis import ---- # Later include things like SMA here
 
 ### Hyperparameters {
-general_url = 'https://steamcommunity.com/market/search?q=&category_730_ItemSet%5B%5D=any&category_730_ProPlayer%5B%5D=any&category_730_StickerCapsule%5B%5D=any&category_730_TournamentTeam%5B%5D=any&category_730_Weapon%5B%5D=any&category_730_Exterior%5B%5D=tag_WearCategory0&appid=730#p'
-initial_page = int(sys.argv[1]) # 40
-final_page = int(sys.argv[2]) # 70 # Inclusive
 navigation_time = 6 # Global wait time between page loads
 username = 'datafarmer001'
 password = 'u9hqgi3sl9'
@@ -78,9 +71,14 @@ def remove_outliers(dataset,sigma):
     stdev = (sum([(x-mean)**2 for x in dataset])/len(dataset))**0.5
     return [x for x in dataset if mean-sigma*stdev < x < mean+sigma*stdev]
 
-maindata = import_json_lines('pagedata.txt',encoding='utf_16',numlines=11)
-maindata_names = [x['Item Name'] for x in maindata]
-ignore_pages = set([x['Item Name'] for x in maindata if x['Sales/Day'] < 1 or ( x['Buy Rate'] > x['Listings'][0]/1.15 ) ])
+
+
+
+
+
+DBdata = import_json_lines('pagedata.txt',encoding='utf_16',numlines=11)
+DBdata_names = [x['Item Name'] for x in DBdata]
+ignore_pages = set([x['Item Name'] for x in DBdata if x['Sales/Day'] < 1 or ( x['Buy Rate'] > x['Listings'][0]/1.15 ) ])
 
 browser = webdriver.Chrome(r'/home/order/Videos/chromedriver/chromedriver') # Linux
 find_css = browser.find_element_by_css_selector
@@ -182,11 +180,11 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
                 'Listings': str(itemized)
             }
 
-            if pagedata['Item Name'] not in maindata_names:
-                maindata.append(pagedata)
-                maindata_names.append(pagedata['Item Name'])
+            if pagedata['Item Name'] not in DBdata_names:
+                DBdata.append(pagedata)
+                DBdata_names.append(pagedata['Item Name'])
             else:
-                maindata[maindata_names.index(pagedata['Item Name'])] = pagedata
+                DBdata[DBdata_names.index(pagedata['Item Name'])] = pagedata
                 print('    ', 'Sucessfully updated some old data!')
             
             # if len(itemized) > 4: # Technically only > 1 is needed, but I don't want to waste my time with inefficient pricing
@@ -225,7 +223,7 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
         else:
             print('    ','Ignored',item_name)
             skipped_item = True
-            pagedata = maindata[maindata_names.index(item_name)]
+            pagedata = DBdata[DBdata_names.index(item_name)]
             
     
     browser.get(page_url)
@@ -234,7 +232,7 @@ for pageno in range(initial_page, final_page+page_direction ,page_direction):
     # Rewrite file at the end of every page (so every 30 seconds or so)
     with open('pagedata.txt','w',encoding='utf_16') as f:
         pass
-    for pagedata in maindata:
+    for pagedata in DBdata:
         if pagedata['Sales from last month']:
             if type(pagedata['Sales from last month'][0][0]) == type(datetime(2017,9,17)):
                 pagedata['Sales from last month'] = str([[x[0].strftime('%Y-%m-%d %H'),x[1]] for x in pagedata['Sales from last month']])
