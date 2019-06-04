@@ -140,12 +140,14 @@ if __name__ == '__main__':
             
             # Update pagedata file every 10 items
             if (itemno + 1)%10 == 0:
+                with open('pagedata.txt','w',encoding='utf_16') as f: # Empty the file
+                    pass
                 for pagedata in DBdata:
                     if pagedata['Sales from last month']: # Nonzero
                         if type(pagedata['Sales from last month'][0][0]) == type(datetime(2017,9,17)): # Fixes an encoding bug
                             pagedata['Sales from last month'] = str([[x[0].strftime('%Y-%m-%d %H'),x[1]] for x in pagedata['Sales from last month']])
                     stringified = {x:str(pagedata[x]) for x in pagedata}
                     prettyjson = json.dumps(stringified, indent=4)
-                    with open('pagedata.txt','w',encoding='utf_16') as f:
+                    with open('pagedata.txt','a',encoding='utf_16') as f:
                         f.write(prettyjson)
                         f.write('\n')

@@ -121,8 +121,9 @@ for pageno in range(initial_page, final_page + page_direction, page_direction):
     time.sleep(navigation_time)
 
     for directorypage in range(10):
-        name_element = find_css('#result_' + directorypage + '_name')
+        name_element = find_css('#result_' + str(directorypage) + '_name')
         name = name_element.text
+        itemno += 1
         if name not in DBdata_names: # ie not seen before
             name_element.click()
             with waitUntil(navigation_time):
@@ -133,12 +134,10 @@ for pageno in range(initial_page, final_page + page_direction, page_direction):
                     browser.refresh()
                     time.sleep(navigation_time*2)
                     full_listing = find_css('#searchResultsRows').text
-                itemized = cleanListing(full_listing,item_name)
+                itemized = cleanListing(full_listing,name)
                 buy_rate = find_css('#market_commodity_buyrequests > span:nth-child(2)').text
                 # ^^ Highest buy order currently on the market. 
                 # If a price drops below this, it will immediately be purchased by the buy orderer.
-
-                itemno += 1
                 
                 # Grab volumetric data for recent sales/prices (from chart).
                 volumetrics = find_css('body > div.responsive_page_frame.with_header > div.responsive_page_content > div.responsive_page_template_content')
@@ -158,16 +157,16 @@ for pageno in range(initial_page, final_page + page_direction, page_direction):
                     'Listings': str(itemized)
                 }
 
-                print('    ' + str(itemno) + '.', item_name, itemized[0], pagedata["Sales/Day"], round(expected_profit,2))
+                print('    ' + str(itemno) + '.', name, itemized[0], pagedata["Sales/Day"])
 
                 DBdata.append(pagedata)
                 DBdata_names.append(pagedata['Item Name'])
-    
-    browser.get(page_url)
-    
-    ### TODO: Just append to the file. No need to rewrite anything on page_gatherer.
-
+            browser.get(page_url)
+        else:
+            print('    ' + str(itemno) + '.', 'Skipped because seen before!')
+        
     with waitUntil(navigation_time):
+        browser.get(page_url)
         # Rewrite file at the end of every page (so every (navigation_time*10) seconds at most)
         with open('pagedata.txt','w',encoding='utf_16') as f: # Empty the file
             pass
@@ -180,11 +179,5 @@ for pageno in range(initial_page, final_page + page_direction, page_direction):
             with open('pagedata.txt','a',encoding='utf_16') as f:
                 f.write(prettyjson)
                 f.write('\n')
-
-    if page_direction == -1:
-        arrow = find_css('#searchResults_btn_prev')
-    if page_direction == 1:
-        arrow = find_css('#searchResults_btn_next')
-    arrow.click()
 
     print()

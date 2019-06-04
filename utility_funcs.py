@@ -26,7 +26,11 @@ def import_json_lines(filename, encoding='utf_16', keep_as_string=False, numline
         for i in range(0,len(data),numlines): # -1 as file ends in \n
             entry = '\n'.join(data[i:i+numlines])
             if entry.strip() != '':
-                jsondata.append(json.loads(entry))
+                try:
+                    jsondata.append(json.loads(entry))
+                except json.decoder.JSONDecodeError:
+                    print(entry)
+                    raise
         data = jsondata
 
     if keep_as_string:
