@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 2, 2019
+# Last Updated: June 4, 2019
 
 ### PURPOSE:
 ### This program gathers URLs for steam items,  as well as relevant page information for that item.
@@ -26,6 +26,11 @@
 ###    caused the loss of about half of the gathered dataset.
 ###    Albeit the loss was from items that sell less than 30 times a month, but that makes
 ###    page_gatherer slower if it doesn't have access to that info.
+
+### 4. Dataset read is pretty slow - figure out a way to improve read rates. See analysis.py for
+###    how slow it tends to be.
+
+### 5. Bring price_scanner.py in compliance with pylint + 100 character lines.
 
 from selenium import webdriver              # Primary navigation of Steam price data.
 from selenium.common.exceptions import NoSuchElementException # Dealing with page load failure.
@@ -172,8 +177,8 @@ for pageno in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
                     'URL': browser.current_url,
                     'Special Type': ['None', 'Souvenir'][item_split[0] == 'Souvenir'],
                     'Condition': ' '.join(item_split[-2:]),
-                        # TODO: This fails for anything b4 the implementation of item conditions
-                        # ex: https://steamcommunity.com/market/listings/730/%E2%98%85%20Navaja%20Knife
+                        # TODO: This fails for anything b4 the implementation of item conditions ex:
+                        # https://steamcommunity.com/market/listings/730/%E2%98%85%20Navaja%20Knife
                     'Sales/Day': str(round(len(recent_data)/30, 2)),
                     'Buy Rate': buy_rate,
                     'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

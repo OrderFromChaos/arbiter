@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 2, 2019
+# Last Updated: June 4, 2019
 
 ### PURPOSE:
 ### This code scans over already found URLs for arbitrage opportunities.

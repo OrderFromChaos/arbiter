@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+
+# Author: Syris Norelli, snore001@ucr.edu
+# Last Updated: June 4, 2019
+
 from utility_funcs import import_json_lines # Importing logged dataset
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import json                                 # Writing and reading logged dataset
