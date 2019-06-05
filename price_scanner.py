@@ -76,7 +76,9 @@ class waitUntil():
 
 if __name__ == '__main__':
     DBdata = import_json_lines('pagedata.txt',encoding='utf_16',numlines=11)
-    DBdata = filter(DBdata)
+    DBdata = filter(DBdata)  ### TODO CRITICAL: If things are filtered out of DBdata, this
+                             ### is reflected in the rewrites to pagedata.txt.
+                             ### This WILL cause data loss.
 
     browser = webdriver.Chrome(r'/home/order/Videos/chromedriver/chromedriver') # Linux
     find_css = browser.find_element_by_css_selector

@@ -10,17 +10,22 @@
 ### TODO:
 
 ### 1. Implement streaming system (data gathering should asynchronously send data to 
-### another waiting socket which analyzes it).
-    ### This will greatly increase code readability (you can stick all the page navigation into 
-    ### a function, and then stick the data analysis elsewhere).
-
-    ### This will probably allow for actual automation, as well - 
-    ###   we can have program change inputs on another socket, and change it while it runs.
+###    another waiting socket which analyzes it).
+###    This will greatly increase code readability (you can stick all the page navigation into 
+###    a function, and then stick the data analysis elsewhere).
+###    This will probably allow for actual automation, as well - 
+###    we can have program change inputs on another socket, and change it while it runs.
 
 ### 2. Implement better fault tolerance for "NoSuchElementException"
-    ### In other words, write a with()able function which has graceful error handling
+###    In other words, write a with()able function which has graceful error handling
 
-### 3. Make analysis much more plug-and-play, with analysis functions able to be written separately.
+### 3. Make a better way of accessing the dataset that's less prone to accidental overwrites. While
+###    the overwrites might be desirable in a sense, we're losing valuable information.
+###    At the end of each file, pagedata.txt is slash-and-burn rewritten to whatever the contents of
+###    DBdata are, and in price_scanner.py, I identified a convenience-related bug that accidentally
+###    caused the loss of about half of the gathered dataset.
+###    Albeit the loss was from items that sell less than 30 times a month, but that makes
+###    page_gatherer slower if it doesn't have access to that info.
 
 from selenium import webdriver              # Primary navigation of Steam price data.
 from selenium.common.exceptions import NoSuchElementException # Dealing with page load failure.
