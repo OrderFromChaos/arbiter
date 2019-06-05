@@ -132,11 +132,14 @@ if __name__ == '__main__':
                 'Sales from last month': str([[x[0].strftime('%Y-%m-%d %H'),x[1]] for x in recent_data]),
                 'Listings': str(itemized)
             }
-            
+
             # ========================== ANALYSIS GOES HERE ==========================
+            # printable_outputs = anaylze([method1, method2, ...], logfile)
+            # Logfile should only be written if positive outcome; we can do testing on analysis.py
 
             print('    ' + str(itemno+1) + '.', item['Item Name'], itemized[0], pagedata["Sales/Day"])
-            
+            # TODO: Add analysis output to print statement
+
             # Update pagedata file every 10 items
             if (itemno + 1)%10 == 0:
                 with open('pagedata.txt','w',encoding='utf_16') as f: # Empty the file

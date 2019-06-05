@@ -8,24 +8,27 @@
 ### The idea is to later stick it into price_scanner.py for actual arbitrage search.
 
 ### TODO:
-### Implement streaming system (data gathering should asynchronously send data to 
-#   another waiting socket which analyzes it).
+
+### 1. Implement streaming system (data gathering should asynchronously send data to 
+### another waiting socket which analyzes it).
     ### This will greatly increase code readability (you can stick all the page navigation into 
-    #   a function, and then stick the data analysis elsewhere).
+    ### a function, and then stick the data analysis elsewhere).
+
     ### This will probably allow for actual automation, as well - 
-    #   we can have program change inputs on another socket, and change it while it runs.
-### Implement better fault tolerance for "NoSuchElementException"
+    ###   we can have program change inputs on another socket, and change it while it runs.
+
+### 2. Implement better fault tolerance for "NoSuchElementException"
     ### In other words, write a with()able function which has graceful error handling
-### Make analysis much more plug-and-play, with analysis functions able to be written separately.
+
+### 3. Make analysis much more plug-and-play, with analysis functions able to be written separately.
 
 from selenium import webdriver              # Primary navigation of Steam price data.
 from selenium.common.exceptions import NoSuchElementException # Dealing with page load failure.
-from utility_funcs import readCurrency      # " $27.45" -> 27.45
 from utility_funcs import import_json_lines # Importing logged dataset
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import time                                 # Waiting so no server-side ban
 import sys                                  # Input pages from command line
-import json                                 # Data logging
+import json                                 # Writing and reading logged dataset
 
 ### Hyperparameters {
 GENERAL_URL = 'https://steamcommunity.com/market/search?q=&category_730_ItemSet%5B%5D=any&' \
