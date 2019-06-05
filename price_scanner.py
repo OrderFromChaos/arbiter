@@ -99,10 +99,10 @@ if __name__ == '__main__':
     with waitUntil(navigation_time):
         code_confirmation = input('Did you enter your Steam confirmation code? [y\\n]')
         if code_confirmation not in ['y','Y','yes','Yes','yep']:
-            raise('Well why didn\'t you??')
+            raise Exception('Well why didn\'t you??')
 
     for itemno, item in enumerate(DBdata):
-        browser.get(URL)
+        browser.get(item['URL'])
         with waitUntil(navigation_time):
             browser.implicitly_wait(15)
             try:
@@ -111,7 +111,7 @@ if __name__ == '__main__':
                 browser.refresh()
                 time.sleep(navigation_time*2)
                 full_listing = find_css('#searchResultsRows').text
-            itemized = cleanListing(full_listing,item_name)
+            itemized = cleanListing(full_listing,item['Item Name'])
             buy_rate = find_css('#market_commodity_buyrequests > span:nth-child(2)').text
             # ^^ Highest buy order currently on the market. 
             # If a price drops below this, it will immediately be purchased by the buy orderer.
@@ -124,7 +124,7 @@ if __name__ == '__main__':
                 'Item Name': item['Item Name'],
                 'URL': browser.current_url, # In case they update the URL and leave a redirect
                 'Special Type': item['Special Type'],
-                'Condition': item['Condition'], # TODO: This fails for anything created before the implementation of item conditions
+                'Condition': item['Condition'],
                     # ex: https://steamcommunity.com/market/listings/730/%E2%98%85%20Navaja%20Knife
                 'Sales/Day': str(round(len(recent_data)/30, 2)),
                 'Buy Rate': buy_rate,
@@ -135,8 +135,7 @@ if __name__ == '__main__':
             
             # ========================== ANALYSIS GOES HERE ==========================
 
-            print('    ' + str(itemno+1) + '.', item_name, itemized[0], pagedata["Sales/Day"])
-            print()
+            print('    ' + str(itemno+1) + '.', item['Item Name'], itemized[0], pagedata["Sales/Day"])
             
             # Update pagedata file every 10 items
             if (itemno + 1)%10 == 0:
@@ -151,3 +150,5 @@ if __name__ == '__main__':
                     with open('pagedata.txt','a',encoding='utf_16') as f:
                         f.write(prettyjson)
                         f.write('\n')
+                print('[WROTE TO FILE.]')
+                print()
