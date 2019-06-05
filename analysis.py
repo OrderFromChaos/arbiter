@@ -2,6 +2,10 @@ from utility_funcs import import_json_lines # Importing logged dataset
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import json                                 # Writing and reading logged dataset
 
+### TODO: Clean up old files; there really only should be page_gatherer, price_scanner, analysis,
+###       and the logfiles.
+### TODO: Figure out how to do something similar to lstsq_before_hour for graphical analysis.
+
 class Backtester:
     def __init__(self, methodology, inputs):
         self.methodology = methodology
