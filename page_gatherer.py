@@ -29,6 +29,10 @@
 
 ### 6. Add a requirements.txt
 
+### 7. Fix inconsistent casing (do camelCase on functions, caps for const.)
+
+### 8. Contemplate adding type hints
+
 from selenium import webdriver              # Primary navigation of Steam price data.
 from selenium.common.exceptions import NoSuchElementException 
                                             # ^^ Dealing with page load failure.

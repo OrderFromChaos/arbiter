@@ -12,9 +12,13 @@
 
 ### 1. Figure out how to do something similar to lstsq_before_hour for graphical analysis.
 
+### 2. Incorporate stuff from complexanalysis.py, expectedprice.py, and linregtest.py
+###    (early analysis attempts)
+
 from utility_funcs import import_json_lines # Importing logged dataset
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import json                                 # Writing and reading logged dataset
+from math import floor, ceil                # Data analysis use in medians
 
 class Backtester:
     def __init__(self, strategy):
@@ -36,6 +40,20 @@ class Backtester:
             self.runBacktest()
         return [x for x in self.results if x['Satisfied']]
 
+def basicTest(strategy, inputs=None, printsat=True):
+    if inputs:
+        backtest = Backtester(strategy(*inputs))
+    else:
+        backtest = Backtester(strategy)
+    backtest.runBacktest()
+    all_results = backtest.results
+    positive_results = backtest.getSatisfied()
+    print('Number that satisfy', strategy.__name__ + ':', len(positive_results))
+    if printsat:
+        for satdict in positive_results:
+            print(satdict)
+    return all_results, positive_results
+
 ### HELPER FUNCTIONS ###
 
 def simpleMovingAvg(dataset, n):
@@ -48,18 +66,40 @@ def simpleMovingAvg(dataset, n):
         avg_list.append(avg)
     return avg_list
 
-def removeOutliers(dataset,sigma):
+def removeOutliers(dataset, key, sigma):
     # Remove all data points that are greater than sigma away from the mean
-    mean = sum(dataset)/len(dataset)
-    stdev = (sum([(x-mean)**2 for x in dataset])/len(dataset))**0.5
-    return [x for x in dataset if mean-sigma*stdev < x < mean+sigma*stdev]
+    outlier_axis = [x[key] for x in dataset]
+    mean = sum(outlier_axis)/len(outlier_axis)
+    stdev = (sum([(x-mean)**2 for x in outlier_axis])/len(outlier_axis))**0.5
+    return [x for x in dataset if mean-sigma*stdev < x[key] < mean+sigma*stdev]
 
 def volumeFilter(dataset, saleslastmonth): # Run for all strategies by default
     return [x for x in dataset if len(x['Sales from last month']) >= saleslastmonth]
 
+def listingFilter(dataset, amountoflistings):
+    return [x for x in dataset if len(x['Listings']) >= amountoflistings]
+
 def profiler(items):
-    # to be built later; stores all the 
+    # to be built later; used to mine frequency data from the items that satisfy a filter
     pass
+
+def median(L):
+    length = len(L)
+    if length == 1:
+        return L[0], 0
+    L = sorted(L)
+    if length % 2 == 1:
+        pos = int(length/2) # int() automatically floors the result
+        return L[pos], pos
+    else:
+        rightmid = length//2
+        return (L[rightmid-1]+L[rightmid])/2, rightmid-0.5
+
+def dateFilter(dataset, ndays):
+    for index, item in enumerate(dataset):
+        filter_date = item['Sales from last month'][-1][0] - timedelta(days=ndays)
+        dataset[index]['Sales from last month'] = [x for x in item['Sales from last month'] if x[0] >= filter_date]
+    return dataset
 
 ########################
 
@@ -67,7 +107,7 @@ def profiler(items):
 
 ### ACTUAL STRATEGY ###
 
-class simpleListingProfit:
+class SimpleListingProfit:
     def __init__(self, percentage):
         self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
                                      # For CS:GO, this is 15%
@@ -76,19 +116,42 @@ class simpleListingProfit:
         for item in dataset:
             itemdict = dict()
             listings = item['Listings']
-            if len(listings) > 0:
-                relevant_listings = sorted(listings[:2])
-                ratio = relevant_listings[1]/relevant_listings[0]
-                itemdict['Satisfied'] = ratio > self.percentage
-                itemdict['Name'] = item['Item Name']
-                itemdict['Ratio'] = ratio
-            else: # Probably won't run because volume filter, but possible
-                itemdict['Satisfied'] = False
-                itemdict['Name'] = item['Item Name']
-                itemdict['Ratio'] = 0
+            relevant_listings = sorted(listings[:2])
+            ratio = relevant_listings[1]/relevant_listings[0]
+
+            itemdict['Satisfied'] = ratio > self.percentage
+            itemdict['Name'] = item['Item Name']
+            itemdict['Ratio'] = round(ratio,2)
+
             outputs.append(itemdict)
         return outputs
 
+class LessThanThirdQuartileHistorical:
+    def run(dataset):
+        outputs = []
+        dataset = dateFilter(dataset,15)
+        for index, item in enumerate(dataset): # Filter out now irrelevant info
+            dataset[index]['Sales from last month'] = [x[1] for x in item['Sales from last month']]
+        dataset = volumeFilter(dataset,3) # Q3 is meaningless without this
+        # dataset = removeOutliers(dataset,'Sales from last month',2) # Bugged for some reason
+        for item in dataset:
+            itemdict = dict()
+            historical = item['Sales from last month']
+
+            Q2, midpoint = median(historical)
+            if isinstance(midpoint, int):
+                Q1, _ = median(historical[:midpoint])
+                Q3, _ = median(historical[midpoint+1:])
+            elif isinstance(midpoint, float):
+                Q1, _ = median(historical[:ceil(midpoint)])
+                Q3, _ = median(historical[ceil(midpoint):])
+            
+            itemdict['Satisfied'] = item['Listings'][0] < Q3/1.15 # 1.15 needed for profitability
+            itemdict['Name'] = item['Item Name']
+            itemdict['Quartiles'] = tuple(map(lambda x: round(x,2), (Q1,Q2,Q3)))
+            itemdict['Lowest Listing'] = item['Listings'][0]
+            outputs.append(itemdict)
+        return outputs
 
 # [INSERT MORE HERE]
 
@@ -112,16 +175,16 @@ if __name__ == '__main__':
     DBdata = import_json_lines('pagedata.txt', encoding='utf_16', numlines=11)
     print('Successful import! Number of entries:', len(DBdata))
     DBdata = volumeFilter(DBdata, 30)
-    print('Number that satisfy volume filter:', len(DBdata))
+    DBdata = listingFilter(DBdata, 1)
+    print('Number that satisfy volume and listing filter:', len(DBdata))
 
     # Testing simple listing profit
-    backtest = Backtester(simpleListingProfit(1.15))
-    backtest.runBacktest()
-    all_results = backtest.results
-    positive_results = backtest.getSatisfied()
-    print('Number that satisfy simpleListingProfit:', len(positive_results))
-    for satdict in positive_results:
-        print(satdict)
+    SLPresults, SLPsatresults = basicTest(SimpleListingProfit,[1.15])
+
+    # Testing LessThanThirdQuartileHistorical
+    LTTQHresults, LTTQHsatresults = basicTest(LessThanThirdQuartileHistorical, printsat=False)
+    for res in LTTQHsatresults[:10]:
+        print(res)
 
 
     ### [Write your strategy backtests here]
