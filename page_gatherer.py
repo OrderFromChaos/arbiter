@@ -29,6 +29,10 @@
 
 ### 6. Add a requirements.txt
 
+### 7. Fix inconsistent casing (do camelCase on functions, caps for const.)
+
+### 8. Contemplate adding type hints
+
 from selenium import webdriver              # Primary navigation of Steam price data.
 from selenium.common.exceptions import NoSuchElementException 
                                             # ^^ Dealing with page load failure.
@@ -44,8 +48,8 @@ GENERAL_URL = 'https://steamcommunity.com/market/search?q=&category_730_ItemSet%
               'category_730_ProPlayer%5B%5D=any&category_730_StickerCapsule%5B%5D=any&'     \
               'category_730_TournamentTeam%5B%5D=any&category_730_Weapon%5B%5D=any&'        \
               'category_730_Exterior%5B%5D=tag_WearCategory0&appid=730#p'
-INITIAL_PAGE = int(sys.argv[1]) # 40
-FINAL_PAGE = int(sys.argv[2]) # 70 # Inclusive
+INITIAL_PAGE = int(sys.argv[1])
+FINAL_PAGE = int(sys.argv[2]) # Inclusive
 NAVIGATION_TIME = 6 # Global wait time between page loads
 USERNAME = 'datafarmer001'
 PASSWORD = 'u9hqgi3sl9'
@@ -164,10 +168,13 @@ for pageno in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
                     time.sleep(NAVIGATION_TIME*2)
                     full_listing = find_css('#searchResultsRows').text
                 itemized = cleanListing(full_listing, name)
-                buy_rate = readUSD(find_css('#market_commodity_buyrequests > '
-                                            'span:nth-child(2)').text)
-                # ^^ Highest buy order currently on the market.
-                # If a price drops below this, it will immediately be purchased by the buy orderer.
+                try:
+                    buy_rate = readUSD(find_css('#market_commodity_buyrequests > '
+                                                    'span:nth-child(2)').text)
+                    # ^^ Highest buy order currently on the market. 
+                    # If a price drops below this, it will immediately be purchased by the buy orderer.
+                except NoSuchElementException:
+                    buy_rate = 0 # Sometimes there are no buy orders
 
                 # Grab volumetric data for recent sales/prices (from chart).
                 volumetrics = find_css('body > div.responsive_page_frame.with_header >'

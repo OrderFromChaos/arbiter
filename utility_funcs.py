@@ -13,7 +13,6 @@ def import_json_lines(filename, encoding='utf_16', numlines=11):
     for i in range(0,len(data)-1,numlines): # -1 as file ends in \n
         entry = '\n'.join(data[i:i+numlines])
         jsondata.append(json.loads(entry))
-    data = jsondata
 
     # Reformat to expected objects
     newdata = [{
@@ -23,11 +22,10 @@ def import_json_lines(filename, encoding='utf_16', numlines=11):
         'Condition': pagedata['Condition'],
         'Sales/Day': float(pagedata['Sales/Day']),
         'Buy Rate': float(pagedata['Buy Rate']),
-        'Date': eval(pagedata['Date']) if pagedata['Date'][0] == 'd' else datetime.datetime.strptime(pagedata['Date'],'%Y-%m-%d %H:%M:%S'),
-            # ^ else stmt for conversion from old datetime format; legacy code to be removed later
+        'Date': eval(pagedata['Date']),
         'Sales from last month': eval(pagedata['Sales from last month']),
         'Listings': eval(pagedata['Listings'])
-    } for pagedata in data]
+    } for pagedata in jsondata]
 
     return newdata
 
@@ -69,4 +67,4 @@ def DBchange(entries,state,DBfile):
 if __name__ == '__main__':
     # TODO: Stick tests here later
     to_add = []
-    DBchange(to_add,'update','pagedata_test.txt')
+    DBchange(to_add,'update','pagedata.txt')

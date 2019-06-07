@@ -20,6 +20,7 @@ import json                                 # Writing and reading logged dataset
 navigation_time = 6 # Global wait time between page loads
 username = 'datafarmer001'
 password = 'u9hqgi3sl9'
+startloc = 200 # Item in database to start price scanning from
 ### }
 
 # -----------------------------------====Data Cleaning Functions====-----------------------------------
@@ -84,6 +85,7 @@ class waitUntil():
 if __name__ == '__main__':
     DBdata = import_json_lines('pagedata.txt',encoding='utf_16',numlines=11)
     of_interest = filter(DBdata)
+    of_interest = of_interest[startloc:] # See hyperparams for startloc
     assert len(of_interest) >= 10, ('price_scanner.py will not write if the volume filtered dataset'
                                     'is smaller than 10. Current size' + str(len(of_interest)))
     browser = webdriver.Chrome(r'/home/order/Videos/chromedriver/chromedriver') # Linux
@@ -121,10 +123,13 @@ if __name__ == '__main__':
                 time.sleep(navigation_time*2)
                 full_listing = find_css('#searchResultsRows').text
             itemized = cleanListing(full_listing,item['Item Name'])
-            buy_rate = readUSD(find_css('#market_commodity_buyrequests > '
-                                            'span:nth-child(2)').text)
-            # ^^ Highest buy order currently on the market. 
-            # If a price drops below this, it will immediately be purchased by the buy orderer.
+            try:
+                buy_rate = readUSD(find_css('#market_commodity_buyrequests > '
+                                                'span:nth-child(2)').text)
+                # ^^ Highest buy order currently on the market. 
+                # If a price drops below this, it will immediately be purchased by the buy orderer.
+            except NoSuchElementException:
+                buy_rate = 0 # Sometimes there are no buy orders
             
             # Grab volumetric data for recent sales/prices (from chart).
             volumetrics = find_css('body > div.responsive_page_frame.with_header > div.responsive_page_content > div.responsive_page_template_content')
