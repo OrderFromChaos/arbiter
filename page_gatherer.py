@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 4, 2019
+# Last Updated: June 6, 2019
 
 ### PURPOSE:
 ### This program gathers URLs for steam items,  as well as relevant page information for that item.
@@ -19,22 +19,21 @@
 ### 2. Implement better fault tolerance for "NoSuchElementException"
 ###    In other words, write a with()able function which has graceful error handling
 
-### 3. Make a better way of accessing the dataset that's less prone to accidental overwrites. While
-###    the overwrites might be desirable in a sense, we're losing valuable information.
-###    At the end of each file, pagedata.txt is slash-and-burn rewritten to whatever the contents of
-###    DBdata are, and in price_scanner.py, I identified a convenience-related bug that accidentally
-###    caused the loss of about half of the gathered dataset.
-###    Albeit the loss was from items that sell less than 30 times a month, but that makes
-###    page_gatherer slower if it doesn't have access to that info.
-
-### 4. Dataset read is pretty slow - figure out a way to improve read rates. See analysis.py for
+### 3. Dataset read is pretty slow - figure out a way to improve read rates. See analysis.py for
 ###    how slow it tends to be.
 
-### 5. Bring price_scanner.py in compliance with pylint + 100 character lines.
+### 4. Bring price_scanner.py and utility_funcs.py in compliance with pylint + 100 character lines.
+
+### 5. Log low volume items separately so it takes up less memory. Ideally, create a global
+###    variable settings database for these kind of filterings.
+
+### 6. Add a requirements.txt
 
 from selenium import webdriver              # Primary navigation of Steam price data.
-from selenium.common.exceptions import NoSuchElementException # Dealing with page load failure.
+from selenium.common.exceptions import NoSuchElementException 
+                                            # ^^ Dealing with page load failure.
 from utility_funcs import import_json_lines # Importing logged dataset
+from utility_funcs import DBchange          # Add items to database safely
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import time                                 # Waiting so no server-side ban
 import sys                                  # Input pages from command line
@@ -55,6 +54,10 @@ PASSWORD = 'u9hqgi3sl9'
 # ---------------------------------====Data Cleaning Functions====---------------------------------
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+def readUSD(dollars):
+    numbers = set('0123456789.')
+    return float(''.join([x for x in dollars if x in numbers]))
+
 def cleanListing(mess, itemname):
     ### Sometimes Steam will dynamically show "Sold!" or the like when it sells at item. 
     #   This function prevents the reader from stumbling.
@@ -63,8 +66,7 @@ def cleanListing(mess, itemname):
     disallowed = {'PRICE', 'SELLER', 'NAME', 'Sold!', 'Buy Now', 
                   'Counter-Strike: Global Offensive', itemname}
     numbers = set('0123456789.')
-    return sorted([float(''.join([char for char in x if char in numbers])) 
-                   for x in mess if x not in disallowed])
+    return sorted([readUSD(x) for x in mess if x not in disallowed])
 
 def cleanVolumetric(data):
     # Parses data from the price chart on an item listing
@@ -93,6 +95,7 @@ def cleanVolumetric(data):
 # -----------------------------------===============================-------------------------------
 
 # Enforces that everything inside a "with WaitUntil(10):" block waits 10 seconds to complete
+# (waits at end if not timed out yet)
 # For more info, see https://jeffknupp.com/blog/2016/03/07/python-with-context-managers/
 class WaitUntil():
     def __init__(self, lengthwait):
@@ -108,8 +111,7 @@ class WaitUntil():
 
 # Import old found items, ignore any with the same name. We're looking for new items only.
 DBdata = import_json_lines('pagedata.txt', encoding='utf_16', numlines=11)
-DBdata_names = [x['Item Name'] for x in DBdata] 
-# ^^ Not a set because we use index to look up DBdata info at a later point
+ignore_names = set([x['Item Name'] for x in DBdata])
 
 browser = webdriver.Chrome(r'/home/order/Videos/chromedriver/chromedriver') # Linux
 find_css = browser.find_element_by_css_selector
@@ -135,7 +137,7 @@ with WaitUntil(NAVIGATION_TIME):
         raise Exception('Well why didn\'t you??')
 
 itemno = 0
-PAGE_DIRECTION = [-1,1][INITIAL_PAGE < FINAL_PAGE] 
+PAGE_DIRECTION = [-1, 1][INITIAL_PAGE < FINAL_PAGE]
 #  ^^ Automatically sets page traversal page_direction
 for pageno in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
     # These pages are like this one:
@@ -146,13 +148,14 @@ for pageno in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
     browser.get(search_url)
     time.sleep(NAVIGATION_TIME)
 
+    obtained_data = [] # Page info to be written to file
     for searchpage in range(10):
         name_element = find_css('#result_' + str(searchpage) + '_name')
         name = name_element.text
         itemno += 1
-        if name not in DBdata_names: # ie not seen before
-            name_element.click()
+        if name not in ignore_names: # ie not seen before
             with WaitUntil(NAVIGATION_TIME):
+                name_element.click()
                 browser.implicitly_wait(15) # Make sure everything loads in
                 try:
                     full_listing = find_css('#searchResultsRows').text
@@ -161,7 +164,8 @@ for pageno in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
                     time.sleep(NAVIGATION_TIME*2)
                     full_listing = find_css('#searchResultsRows').text
                 itemized = cleanListing(full_listing, name)
-                buy_rate = find_css('#market_commodity_buyrequests > span:nth-child(2)').text
+                buy_rate = readUSD(find_css('#market_commodity_buyrequests > '
+                                            'span:nth-child(2)').text)
                 # ^^ Highest buy order currently on the market.
                 # If a price drops below this, it will immediately be purchased by the buy orderer.
 
@@ -179,35 +183,24 @@ for pageno in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
                     'Condition': ' '.join(item_split[-2:]),
                         # TODO: This fails for anything b4 the implementation of item conditions ex:
                         # https://steamcommunity.com/market/listings/730/%E2%98%85%20Navaja%20Knife
-                    'Sales/Day': str(round(len(recent_data)/30, 2)),
+                    'Sales/Day': round(len(recent_data)/30, 2),
                     'Buy Rate': buy_rate,
                     'Date': datetime.now(),
                     'Sales from last month': recent_data,
                     'Listings': itemized
                 }
+                
+                print('    ' + str(itemno) + '.', name, 'lowest_price=' + str(itemized[0]), 
+                      'sales/day=' + str(pagedata["Sales/Day"]))
 
-                print('    ' + str(itemno) + '.', name, itemized[0], pagedata["Sales/Day"])
-
-                DBdata.append(pagedata)
-                DBdata_names.append(pagedata['Item Name'])
-            browser.get(search_url)
+                obtained_data.append(pagedata)
+                ignore_names.add(pagedata['Item Name'])
+            with WaitUntil(NAVIGATION_TIME):
+                browser.get(search_url)
         else:
             print('    ' + str(itemno) + '.', 'Skipped because seen before!')
-
-    with WaitUntil(NAVIGATION_TIME):
-        browser.get(search_url)
-        # Rewrite file at the end of every page (so every (NAVIGATION_TIME*10) seconds at most)
-        with open('pagedata.txt', 'w', encoding='utf_16') as f: # Empty the file
-            pass
-        for pagedata in DBdata:
-            if pagedata['Sales from last month']:
-                if isinstance(pagedata['Sales from last month'][0][0], datetime):
-                    pagedata['Sales from last month'] = str([[x[0].strftime('%Y-%m-%d %H'),x[1]]
-                                                            for x in pagedata['Sales from last month']])
-            stringified = {x:str(pagedata[x]) for x in pagedata}
-            prettyjson = json.dumps(stringified, indent=4)
-            with open('pagedata.txt', 'a', encoding='utf_16') as f:
-                f.write(prettyjson)
-                f.write('\n')
+    
+    # Rewrite file at the end of every page (so every (NAVIGATION_TIME*10) seconds at most)
+    DBchange(obtained_data,'add','pagedata.txt')
 
     print()

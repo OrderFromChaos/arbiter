@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 4, 2019
+# Last Updated: June 6, 2019
 
 ### PURPOSE:
 ### This code scans over already found URLs for arbitrage opportunities.
 
-from selenium import webdriver              # Primary navigation of Steam price data. Used for login.
-from selenium.common.exceptions import NoSuchElementException # Used for the occasional page load failure.
-import time                                 # Page waits
-from datetime import datetime, timedelta    # Volumetric sale filtering based on date
-import json                                 # Data logging - update database
-from utility_funcs import readCurrency      # " $27.45" -> 27.45
+from selenium import webdriver              # Primary navigation of Steam price data.
+from selenium.common.exceptions import NoSuchElementException 
+                                            # ^^ Dealing with page load failure.
 from utility_funcs import import_json_lines # Importing logged dataset
+from utility_funcs import DBchange          # Add items to database safely
+from datetime import datetime, timedelta    # Volumetric sale filtering based on date
+import time                                 # Waiting so no server-side ban
+import json                                 # Writing and reading logged dataset
 # from analysis import ---- # Later include things like SMA here
 
 ### Hyperparameters {
@@ -24,13 +25,19 @@ password = 'u9hqgi3sl9'
 # -----------------------------------====Data Cleaning Functions====-----------------------------------
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-def cleanListing(mess,itemname):
-    ### Sometimes Steam will dynamically show "Sold!" or the like when it sells at item. This prevents the parser from stumbling
+def readUSD(dollars):
+    numbers = set('0123456789.')
+    return float(''.join([x for x in dollars if x in numbers]))
+
+def cleanListing(mess, itemname):
+    ### Sometimes Steam will dynamically show "Sold!" or the like when it sells at item. 
+    #   This function prevents the reader from stumbling.
     mess = mess.split('\n')
     # Does this instead of a spacing-based system because 'Sold!' changes the spacing.
-    disallowed = ['PRICE','SELLER','NAME','Sold!','Buy Now','Counter-Strike: Global Offensive',itemname]
+    disallowed = {'PRICE', 'SELLER', 'NAME', 'Sold!', 'Buy Now', 
+                  'Counter-Strike: Global Offensive', itemname}
     numbers = set('0123456789.')
-    return sorted([float(''.join([char for char in x if char in numbers])) for x in mess if x not in disallowed])
+    return sorted([readUSD(x) for x in mess if x not in disallowed])
 
 def cleanVolumetric(data):
     # Parses data from the price chart on an item listing
@@ -55,10 +62,10 @@ def cleanVolumetric(data):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # -----------------------------------===============================-----------------------------------
 
-def filter(DBdata):
+def filter(DB):
     # Filter by volume; must have greater than 30 sales last month
-    DBdata = [x for x in DBdata if len(x['Sales from last month']) > 30]
-    return DBdata
+    DB = [x for x in DBdata if len(x['Sales from last month']) > 30]
+    return DB
 
 class waitUntil():
     # Enforces that everything inside a "with waitUntil(10):" block waits 10 seconds to complete
@@ -76,10 +83,9 @@ class waitUntil():
 
 if __name__ == '__main__':
     DBdata = import_json_lines('pagedata.txt',encoding='utf_16',numlines=11)
-    DBdata = filter(DBdata)  ### TODO CRITICAL: If things are filtered out of DBdata, this
-                             ### is reflected in the rewrites to pagedata.txt.
-                             ### This WILL cause data loss.
-
+    of_interest = filter(DBdata)
+    assert len(of_interest) >= 10, ('price_scanner.py will not write if the volume filtered dataset'
+                                    'is smaller than 10. Current size' + str(len(of_interest)))
     browser = webdriver.Chrome(r'/home/order/Videos/chromedriver/chromedriver') # Linux
     find_css = browser.find_element_by_css_selector
 
@@ -103,7 +109,8 @@ if __name__ == '__main__':
         if code_confirmation not in ['y','Y','yes','Yes','yep']:
             raise Exception('Well why didn\'t you??')
 
-    for itemno, item in enumerate(DBdata):
+    to_write = [] # Item data to be updated in database
+    for itemno, item in enumerate(of_interest):
         browser.get(item['URL'])
         with waitUntil(navigation_time):
             browser.implicitly_wait(15)
@@ -114,7 +121,8 @@ if __name__ == '__main__':
                 time.sleep(navigation_time*2)
                 full_listing = find_css('#searchResultsRows').text
             itemized = cleanListing(full_listing,item['Item Name'])
-            buy_rate = find_css('#market_commodity_buyrequests > span:nth-child(2)').text
+            buy_rate = readUSD(find_css('#market_commodity_buyrequests > '
+                                            'span:nth-child(2)').text)
             # ^^ Highest buy order currently on the market. 
             # If a price drops below this, it will immediately be purchased by the buy orderer.
             
@@ -127,15 +135,16 @@ if __name__ == '__main__':
                 'URL': browser.current_url, # In case they update the URL and leave a redirect
                 'Special Type': item['Special Type'],
                 'Condition': item['Condition'],
-                    # ex: https://steamcommunity.com/market/listings/730/%E2%98%85%20Navaja%20Knife
-                'Sales/Day': str(round(len(recent_data)/30, 2)),
+                'Sales/Day': round(len(recent_data)/30, 2),
                 'Buy Rate': buy_rate,
-                'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'Sales from last month': str([[x[0].strftime('%Y-%m-%d %H'),x[1]] for x in recent_data]),
-                'Listings': str(itemized)
+                'Date': datetime.now(),
+                'Sales from last month': recent_data,
+                'Listings': itemized
             }
 
-            # ========================== ANALYSIS GOES HERE ==========================
+            to_write.append(pagedata)
+
+            # ========================== TODO: ANALYSIS GOES HERE ==========================
             # printable_outputs = anaylze([method1, method2, ...], logfile)
             # Logfile should only be written if positive outcome; we can do testing on analysis.py
 
@@ -144,16 +153,7 @@ if __name__ == '__main__':
 
             # Update pagedata file every 10 items
             if (itemno + 1)%10 == 0:
-                with open('pagedata.txt','w',encoding='utf_16') as f: # Empty the file
-                    pass
-                for pagedata in DBdata:
-                    if pagedata['Sales from last month']: # Nonzero
-                        if type(pagedata['Sales from last month'][0][0]) == type(datetime(2017,9,17)): # Fixes an encoding bug
-                            pagedata['Sales from last month'] = str([[x[0].strftime('%Y-%m-%d %H'),x[1]] for x in pagedata['Sales from last month']])
-                    stringified = {x:str(pagedata[x]) for x in pagedata}
-                    prettyjson = json.dumps(stringified, indent=4)
-                    with open('pagedata.txt','a',encoding='utf_16') as f:
-                        f.write(prettyjson)
-                        f.write('\n')
-                print('[WROTE TO FILE.]')
+                DBchange(to_write,'update','pagedata.txt')
+                to_write = []
+                print('    [WROTE TO FILE.]')
                 print()

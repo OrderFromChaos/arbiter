@@ -1,7 +1,12 @@
+#!/usr/bin/env python3
+
+# Author: Syris Norelli, snore001@ucr.edu
+# Last Updated: June 6, 2019
+
 import json
 import datetime
 
-def import_json_lines(filename, encoding='utf_16', keep_as_string=False, numlines=11):
+def import_json_lines(filename, encoding='utf_16', numlines=11):
     with open(filename, 'r', encoding=encoding) as f:
         data = f.readlines()
     jsondata = []
@@ -10,24 +15,7 @@ def import_json_lines(filename, encoding='utf_16', keep_as_string=False, numline
         jsondata.append(json.loads(entry))
     data = jsondata
 
-    if keep_as_string:
-        return data
-
-    ############### Expected format [May not be accurate anymore]
-    # pagedata = {
-    #     'Item Name': item_name,
-    #     'URL': browser.current_url,
-    #     'Special Type': ['None','Souvenir'][item_split[0] == 'Souvenir'],
-    #     'Condition': ' '.join(item_split[-2:]),
-    #     'Sales/Day': str(round(len(recent_data)/30, 2)),
-    #     'Buy Rate': buy_rate,
-    #     'Date': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    #     'Sales from last month': str([[x[0].strftime('%Y-%m-%d %H'),x[1]] for x in recent_data]),
-    #     'Listings': str(itemized)
-    # }
-
     # Reformat to expected objects
-
     newdata = [{
         'Item Name': pagedata['Item Name'],
         'URL': pagedata['URL'],
@@ -36,13 +24,14 @@ def import_json_lines(filename, encoding='utf_16', keep_as_string=False, numline
         'Sales/Day': float(pagedata['Sales/Day']),
         'Buy Rate': float(pagedata['Buy Rate']),
         'Date': eval(pagedata['Date']) if pagedata['Date'][0] == 'd' else datetime.datetime.strptime(pagedata['Date'],'%Y-%m-%d %H:%M:%S'),
+            # ^ else stmt for conversion from old datetime format; legacy code to be removed later
         'Sales from last month': eval(pagedata['Sales from last month']),
         'Listings': eval(pagedata['Listings'])
     } for pagedata in data]
 
     return newdata
 
-def DBupdate(entries,state,DBfile):
+def DBchange(entries,state,DBfile):
     # If state is 'add':
     #     directly append list of dicts to end of file
     #     [when using, make sure the dicts aren't already in the file]
@@ -75,10 +64,9 @@ def DBupdate(entries,state,DBfile):
                 dataset[position.index(entry_name)] = entry
         with open(DBfile, 'w'): # Clear file before writing; items will be written individually
             pass
-        DBupdate(dataset, 'add', DBfile)
+        DBchange(dataset, 'add', DBfile)
 
 if __name__ == '__main__':
     # TODO: Stick tests here later
     to_add = []
-
-    DBupdate(to_add,'update','pagedata.txt')
+    DBchange(to_add,'update','pagedata_test.txt')

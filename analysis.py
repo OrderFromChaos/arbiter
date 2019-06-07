@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 4, 2019
+# Last Updated: June 5, 2019
+
+### PURPOSE:
+### This program serves two purposes:
+### 1. A source for buying/selling strategies to be slotted into other programs and
+### 2. When run as itself, the ability to backtest strategies during development.
+
+### TODO: 
+
+### 1. Figure out how to do something similar to lstsq_before_hour for graphical analysis.
 
 from utility_funcs import import_json_lines # Importing logged dataset
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import json                                 # Writing and reading logged dataset
-
-### TODO: Clean up old files; there really only should be page_gatherer, price_scanner, analysis,
-###       utility_funcs, and the logfiles.
-### TODO: Figure out how to do something similar to lstsq_before_hour for graphical analysis.
 
 class Backtester:
     def __init__(self, strategy):
@@ -77,7 +82,7 @@ class simpleListingProfit:
                 itemdict['Satisfied'] = ratio > self.percentage
                 itemdict['Name'] = item['Item Name']
                 itemdict['Ratio'] = ratio
-            else: # Shouldn't run because volume filter, but possible
+            else: # Probably won't run because volume filter, but possible
                 itemdict['Satisfied'] = False
                 itemdict['Name'] = item['Item Name']
                 itemdict['Ratio'] = 0
