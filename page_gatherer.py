@@ -47,7 +47,11 @@ import json                                 # Writing and reading logged dataset
 GENERAL_URL = 'https://steamcommunity.com/market/search?q=&category_730_ItemSet%5B%5D=any&' \
               'category_730_ProPlayer%5B%5D=any&category_730_StickerCapsule%5B%5D=any&'     \
               'category_730_TournamentTeam%5B%5D=any&category_730_Weapon%5B%5D=any&'        \
-              'category_730_Exterior%5B%5D=tag_WearCategory0&appid=730#p'
+              'category_730_Exterior%5B%5D=tag_WearCategory0&appid=730#p' # Factory New
+# GENERAL_URL = 'https://steamcommunity.com/market/search?q=&category_730_ItemSet%5B%5D=any&' \
+#               'category_730_ProPlayer%5B%5D=any&category_730_StickerCapsule%5B%5D=any&'     \
+#               'category_730_TournamentTeam%5B%5D=any&category_730_Weapon%5B%5D=any&'        \
+#               'category_730_Exterior%5B%5D=tag_WearCategory1&appid=730#p' # Minimal Wear
 INITIAL_PAGE = int(sys.argv[1])
 FINAL_PAGE = int(sys.argv[2]) # Inclusive
 NAVIGATION_TIME = 6 # Global wait time between page loads

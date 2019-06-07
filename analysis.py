@@ -116,6 +116,7 @@ class SimpleListingProfit:
                                      # For CS:GO, this is 15%
     def run(self, dataset):
         outputs = []
+        dataset = listingFilter(dataset,2)
         for item in dataset:
             itemdict = dict()
             listings = item['Listings']
@@ -132,7 +133,7 @@ class SimpleListingProfit:
 class LessThanThirdQuartileHistorical:
     def run(dataset):
         outputs = []
-        dataset = dateFilter(dataset,15)
+        # dataset = dateFilter(dataset,15)
         # for index, item in enumerate(dataset): # Filter out now irrelevant info
         #     dataset[index]['Sales from last month'] = [x[1] for x in item['Sales from last month']]
         dataset = volumeFilter(dataset,3) # Q3 is meaningless without this
@@ -158,6 +159,9 @@ class LessThanThirdQuartileHistorical:
             itemdict['Expected Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
             outputs.append(itemdict)
         return outputs
+
+### TODO: Implement "spring" model - items that can likely be buy/sold right away just by vigilantly
+###       watching.
 
 # [INSERT MORE HERE]
 
