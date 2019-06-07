@@ -181,10 +181,9 @@ for pageno in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
                         # https://steamcommunity.com/market/listings/730/%E2%98%85%20Navaja%20Knife
                     'Sales/Day': str(round(len(recent_data)/30, 2)),
                     'Buy Rate': buy_rate,
-                    'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    'Sales from last month': str([[x[0].strftime('%Y-%m-%d %H'),x[1]] 
-                                                  for x in recent_data]),
-                    'Listings': str(itemized)
+                    'Date': datetime.now(),
+                    'Sales from last month': recent_data,
+                    'Listings': itemized
                 }
 
                 print('    ' + str(itemno) + '.', name, itemized[0], pagedata["Sales/Day"])
