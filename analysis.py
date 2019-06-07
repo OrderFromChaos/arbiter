@@ -15,6 +15,8 @@
 ### 2. Incorporate stuff from complexanalysis.py, expectedprice.py, and linregtest.py
 ###    (early analysis attempts)
 
+### 3. Figure out how to incorporate analysis funcs into price_scanner.py
+
 from utility_funcs import import_json_lines # Importing logged dataset
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import json                                 # Writing and reading logged dataset
@@ -98,7 +100,8 @@ def median(L):
 def dateFilter(dataset, ndays):
     for index, item in enumerate(dataset):
         filter_date = item['Sales from last month'][-1][0] - timedelta(days=ndays)
-        dataset[index]['Sales from last month'] = [x for x in item['Sales from last month'] if x[0] >= filter_date]
+        dataset[index]['Sales from last month'] = [x for x in item['Sales from last month'] 
+                                                   if x[0] >= filter_date]
     return dataset
 
 ########################
@@ -130,13 +133,13 @@ class LessThanThirdQuartileHistorical:
     def run(dataset):
         outputs = []
         dataset = dateFilter(dataset,15)
-        for index, item in enumerate(dataset): # Filter out now irrelevant info
-            dataset[index]['Sales from last month'] = [x[1] for x in item['Sales from last month']]
+        # for index, item in enumerate(dataset): # Filter out now irrelevant info
+        #     dataset[index]['Sales from last month'] = [x[1] for x in item['Sales from last month']]
         dataset = volumeFilter(dataset,3) # Q3 is meaningless without this
         # dataset = removeOutliers(dataset,'Sales from last month',2) # Bugged for some reason
         for item in dataset:
             itemdict = dict()
-            historical = item['Sales from last month']
+            historical = sorted([x[1] for x in item['Sales from last month']])
 
             Q2, midpoint = median(historical)
             if isinstance(midpoint, int):
@@ -146,29 +149,19 @@ class LessThanThirdQuartileHistorical:
                 Q1, _ = median(historical[:ceil(midpoint)])
                 Q3, _ = median(historical[ceil(midpoint):])
             
-            itemdict['Satisfied'] = item['Listings'][0] < Q3/1.15 # 1.15 needed for profitability
+            itemdict['Satisfied'] = (item['Listings'][0]*1.15 < Q3 
+                                     and item['Special Type'] != 'Souvenir')
             itemdict['Name'] = item['Item Name']
             itemdict['Quartiles'] = tuple(map(lambda x: round(x,2), (Q1,Q2,Q3)))
             itemdict['Lowest Listing'] = item['Listings'][0]
+            itemdict['Sales/Day'] = item['Sales/Day']
+            itemdict['Expected Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
             outputs.append(itemdict)
         return outputs
 
 # [INSERT MORE HERE]
 
 #######################
-
-############### By way of reminder, expected format
-# pagedata = {
-#     'Item Name': item_name,
-#     'URL': browser.current_url,
-#     'Special Type': ['None','Souvenir'][item_split[0] == 'Souvenir'],
-#     'Condition': ' '.join(item_split[-2:]),
-#     'Sales/Day': str(round(len(recent_data)/30, 2)),
-#     'Buy Rate': buy_rate,
-#     'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-#     'Sales from last month': str([[x[0].strftime('%Y-%m-%d %H'),x[1]] for x in recent_data]),
-#     'Listings': str(itemized)
-# }
 
 if __name__ == '__main__':
     print('Doing inital dataset import...')
@@ -179,12 +172,9 @@ if __name__ == '__main__':
     print('Number that satisfy volume and listing filter:', len(DBdata))
 
     # Testing simple listing profit
-    SLPresults, SLPsatresults = basicTest(SimpleListingProfit,[1.15])
+    SLPresults, SLPsatresults = basicTest(SimpleListingProfit,inputs=[1.15], printsat=False)
 
     # Testing LessThanThirdQuartileHistorical
-    LTTQHresults, LTTQHsatresults = basicTest(LessThanThirdQuartileHistorical, printsat=False)
-    for res in LTTQHsatresults[:10]:
-        print(res)
-
+    LTTQHresults, LTTQHsatresults = basicTest(LessThanThirdQuartileHistorical)
 
     ### [Write your strategy backtests here]
