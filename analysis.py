@@ -145,10 +145,10 @@ class LessThanThirdQuartileHistorical:
             Q2, midpoint = median(historical)
             if isinstance(midpoint, int):
                 Q1, _ = median(historical[:midpoint])
-                Q3, _ = median(historical[midpoint+1:])
+                Q3, Q3list = median(historical[midpoint+1:])
             elif isinstance(midpoint, float):
                 Q1, _ = median(historical[:ceil(midpoint)])
-                Q3, _ = median(historical[ceil(midpoint):])
+                Q3, Q3list = median(historical[ceil(midpoint):])
             
             itemdict['Satisfied'] = (item['Listings'][0]*1.15 < Q3 
                                      and item['Special Type'] != 'Souvenir')
@@ -157,6 +157,7 @@ class LessThanThirdQuartileHistorical:
             itemdict['Lowest Listing'] = item['Listings'][0]
             itemdict['Sales/Day'] = item['Sales/Day']
             itemdict['Expected Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
+            itemdict['Expected Profit/Day'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
             outputs.append(itemdict)
         return outputs
 
