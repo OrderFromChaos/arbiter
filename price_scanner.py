@@ -11,11 +11,11 @@ from selenium.common.exceptions import NoSuchElementException
                                             # ^^ Dealing with page load failure.
 from utility_funcs import import_json_lines # Importing logged dataset
 from utility_funcs import DBchange          # Add items to database safely
+from analysis import LessThanThirdQuartileHistorical 
+                                            # Notify of buy-worthy things while running
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import time                                 # Waiting so no server-side ban
 import json                                 # Writing and reading logged dataset
-from analysis import LessThanThirdQuartileHistorical 
-                                            # Notify of buy-worthy things while running
 
 ### Hyperparameters {
 navigation_time = 6 # Global wait time between page loads
@@ -149,6 +149,11 @@ if __name__ == '__main__':
             }
 
             to_write.append(pagedata)
+            if itemized: # Nonempty
+                satcheck = LessThanThirdQuartileHistorical.runindividual(pagedata)
+                if satcheck['Satisfied']:
+                    print('!!!!', 'Found a Q3 satisfying item')
+                    print(satcheck)
 
             # ========================== TODO: ANALYSIS GOES HERE ==========================
             # printable_outputs = anaylze([method1, method2, ...], logfile)

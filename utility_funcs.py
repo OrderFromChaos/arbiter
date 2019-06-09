@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 6, 2019
+# Last Updated: June 7, 2019
 
 import json
 import datetime

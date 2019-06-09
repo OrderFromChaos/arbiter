@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 6, 2019
+# Last Updated: June 7, 2019
 
 ### PURPOSE:
 ### This program gathers URLs for steam items,  as well as relevant page information for that item.
@@ -51,7 +51,7 @@ condition_dict = {
     'Well-Worn': 3,
     'Battle-Scarred': 4
 }
-condition = condition_dict['Field-Tested']
+condition = condition_dict['Well-Worn']
 
 GENERAL_URL = 'https://steamcommunity.com/market/search?q=&category_730_ItemSet%5B%5D=any&' \
               'category_730_ProPlayer%5B%5D=any&category_730_StickerCapsule%5B%5D=any&'     \
