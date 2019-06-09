@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 6, 2019
+# Last Updated: June 7, 2019
 
 ### PURPOSE:
 ### This program gathers URLs for steam items,  as well as relevant page information for that item.
@@ -44,10 +44,20 @@ import sys                                  # Input pages from command line
 import json                                 # Writing and reading logged dataset
 
 ### Hyperparameters {
+condition_dict = {
+    'Factory New': 0,
+    'Minimal Wear': 1,
+    'Field-Tested': 2,
+    'Well-Worn': 3,
+    'Battle-Scarred': 4
+}
+condition = condition_dict['Well-Worn']
+
 GENERAL_URL = 'https://steamcommunity.com/market/search?q=&category_730_ItemSet%5B%5D=any&' \
               'category_730_ProPlayer%5B%5D=any&category_730_StickerCapsule%5B%5D=any&'     \
               'category_730_TournamentTeam%5B%5D=any&category_730_Weapon%5B%5D=any&'        \
-              'category_730_Exterior%5B%5D=tag_WearCategory0&appid=730#p'
+              'category_730_Exterior%5B%5D=tag_WearCategory' + str(condition) + '&appid=730#p'
+
 INITIAL_PAGE = int(sys.argv[1])
 FINAL_PAGE = int(sys.argv[2]) # Inclusive
 NAVIGATION_TIME = 6 # Global wait time between page loads
@@ -196,9 +206,12 @@ for pageno in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
                     'Sales from last month': recent_data,
                     'Listings': itemized
                 }
-                
-                print('    ' + str(itemno) + '.', name, 'lowest_price=' + str(itemized[0]), 
-                      'sales/day=' + str(pagedata["Sales/Day"]))
+                if itemized: # Nonzero
+                    print('    ' + str(itemno) + '.', name, 'lowest_price=' + str(itemized[0]), 
+                        'sales/day=' + str(pagedata["Sales/Day"]))
+                else:
+                    print('    ' + str(itemno) + '.', name, 'lowest_price=EMPTY', 
+                        'sales/day=' + str(pagedata["Sales/Day"]))
 
                 obtained_data.append(pagedata)
                 ignore_names.add(pagedata['Item Name'])

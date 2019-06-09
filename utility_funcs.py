@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 6, 2019
+# Last Updated: June 7, 2019
 
 import json
 import datetime
@@ -63,8 +63,14 @@ def DBchange(entries,state,DBfile):
         with open(DBfile, 'w'): # Clear file before writing; items will be written individually
             pass
         DBchange(dataset, 'add', DBfile)
+    elif state == 'sort': # Human-compatibility; sort by lowest listing
+        dataset = import_json_lines(DBfile, encoding='utf_16')
+        dataset = sorted(dataset, key=lambda x: x['Listings'][0], reverse=True)
+        with open(DBfile,'w'):
+            pass
+        DBchange(dataset, 'add', DBfile)
 
 if __name__ == '__main__':
     # TODO: Stick tests here later
     to_add = []
-    DBchange(to_add,'update','pagedata.txt')
+    DBchange(to_add,'sort','pagedata.txt')

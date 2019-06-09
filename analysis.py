@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 5, 2019
+# Last Updated: June 7, 2019
 
 ### PURPOSE:
 ### This program serves two purposes:
@@ -12,10 +12,12 @@
 
 ### 1. Figure out how to do something similar to lstsq_before_hour for graphical analysis.
 
-### 2. Incorporate stuff from complexanalysis.py, expectedprice.py, and linregtest.py
+### 2. Incorporate stuff from expectedprice.py and linregtest.py
 ###    (early analysis attempts)
 
 ### 3. Figure out how to incorporate analysis funcs into price_scanner.py
+###    Convert functions to individual checks; this is needed to incorporate them into
+###    page_gatherer and price_scanner...
 
 from utility_funcs import import_json_lines # Importing logged dataset
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
@@ -97,12 +99,28 @@ def median(L):
         rightmid = length//2
         return (L[rightmid-1]+L[rightmid])/2, rightmid-0.5
 
+def quartiles(L):
+    L = sorted(L)
+
+    Q2, midpoint = median(L)
+    if isinstance(midpoint, int):
+        Q1, Q1pos = median(L[:midpoint])
+        Q3, Q3pos = median(L[midpoint+1:])
+    elif isinstance(midpoint, float):
+        Q1, Q1pos = median(L[:ceil(midpoint)])
+        Q3, Q3pos = median(L[ceil(midpoint):])
+    return (Q1,Q2,Q3), (Q1pos, midpoint, Q3pos)
+
 def dateFilter(dataset, ndays):
     for index, item in enumerate(dataset):
         filter_date = item['Sales from last month'][-1][0] - timedelta(days=ndays)
         dataset[index]['Sales from last month'] = [x for x in item['Sales from last month'] 
                                                    if x[0] >= filter_date]
     return dataset
+
+def tail(dataset,n):
+    for i in dataset[:n]:
+        print(i)
 
 ########################
 
@@ -116,6 +134,7 @@ class SimpleListingProfit:
                                      # For CS:GO, this is 15%
     def run(self, dataset):
         outputs = []
+        dataset = listingFilter(dataset,2)
         for item in dataset:
             itemdict = dict()
             listings = item['Listings']
@@ -132,32 +151,78 @@ class SimpleListingProfit:
 class LessThanThirdQuartileHistorical:
     def run(dataset):
         outputs = []
-        dataset = dateFilter(dataset,15)
+        # dataset = dateFilter(dataset,15)
         # for index, item in enumerate(dataset): # Filter out now irrelevant info
         #     dataset[index]['Sales from last month'] = [x[1] for x in item['Sales from last month']]
-        dataset = volumeFilter(dataset,3) # Q3 is meaningless without this
+        dataset = volumeFilter(dataset,30) # Q3 is meaningless without this
         # dataset = removeOutliers(dataset,'Sales from last month',2) # Bugged for some reason
         for item in dataset:
-            itemdict = dict()
-            historical = sorted([x[1] for x in item['Sales from last month']])
-
-            Q2, midpoint = median(historical)
-            if isinstance(midpoint, int):
-                Q1, _ = median(historical[:midpoint])
-                Q3, _ = median(historical[midpoint+1:])
-            elif isinstance(midpoint, float):
-                Q1, _ = median(historical[:ceil(midpoint)])
-                Q3, _ = median(historical[ceil(midpoint):])
-            
-            itemdict['Satisfied'] = (item['Listings'][0]*1.15 < Q3 
-                                     and item['Special Type'] != 'Souvenir')
-            itemdict['Name'] = item['Item Name']
-            itemdict['Quartiles'] = tuple(map(lambda x: round(x,2), (Q1,Q2,Q3)))
-            itemdict['Lowest Listing'] = item['Listings'][0]
-            itemdict['Sales/Day'] = item['Sales/Day']
-            itemdict['Expected Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
+            itemdict = LessThanThirdQuartileHistorical.runindividual(item)
+            # itemdict['Expected Profit/Day'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
             outputs.append(itemdict)
         return outputs
+    def runindividual(item):
+        itemdict = dict()
+        ### Assume already volume filtered
+        # if not dataset_run:
+        #     # Filter checking
+        #     out = volumeFilter([item],30)
+        #     if not out: # Empty return
+        #         itemdict['Satisfied'] = False
+        #         itemdict['Name'] = item['Item Name']
+        #         itemdict['Quartiles'] = itemdict['Lowest Listing'] = itemdict['Sales/Day'] = itemdict['Expected Profit'] = None
+        historical = [x[1] for x in item['Sales from last month']]
+
+        quarts, anchors = quartiles(historical)
+        Q1, Q2, Q3 = quarts
+        _, _, Q3pos = anchors
+        # Q3pos is for the later to be implemented Expected Profit/Day
+
+        itemdict['Satisfied'] = (item['Listings'][0]*1.15 < Q3 
+                                    and item['Special Type'] != 'Souvenir')
+        itemdict['Name'] = item['Item Name']
+        itemdict['Quartiles'] = tuple(map(lambda x: round(x,2), (Q1,Q2,Q3)))
+        itemdict['Lowest Listing'] = item['Listings'][0]
+        itemdict['Sales/Day'] = item['Sales/Day']
+        itemdict['Expected Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
+
+        return itemdict
+
+class SpringSearch:
+    # Items whose historical data Q1 and Q3 differ by more than 15%
+    def run(dataset):
+        outputs = []
+        dataset = volumeFilter(dataset,30) # Spring is likely not meaningful without large vol.
+        dataset = dateFilter(dataset,15)
+        for item in dataset:
+            itemdict = runIndividual(item)
+            outputs.append(itemdict)
+        return outputs
+    def runIndividual(item):
+        # Assume already volume filtered
+        itemdict = dict()
+        cutoff_ratio = 1.15
+        item = dateFilter([item],15)[0]
+
+        historical = [x[1] for x in item['Sales from last month']]
+        quarts, anchors = quartiles(historical)
+        Q1, Q2, Q3 = quarts
+
+        itemdict['Satisfied'] = (item['Special Type'] != 'Souvenir'
+                                    and Q3/cutoff_ratio > item['Buy Rate']
+                                    and Q1*cutoff_ratio < Q3
+                                    and item['Sales/Day'] >= 2)
+        itemdict['Name'] = item['Item Name']
+        itemdict['Quartiles'] = tuple(map(lambda x: round(x,2), quarts))
+        itemdict['Sales/Day'] = item['Sales/Day']
+        itemdict['Ratio'] = round(Q3/Q1,2)
+        itemdict['Profit'] = round((itemdict['Ratio']-1.15)*Q1,2) # Buy at Q1, sell at Q3
+
+        return itemdict
+
+
+### TODO: Implement "spring" model - items that can likely be buy/sold right away just by vigilantly
+###       watching.
 
 # [INSERT MORE HERE]
 
@@ -171,10 +236,14 @@ if __name__ == '__main__':
     DBdata = listingFilter(DBdata, 1)
     print('Number that satisfy volume and listing filter:', len(DBdata))
 
-    # Testing simple listing profit
+    # Testing SimpleListingProfit
     SLPresults, SLPsatresults = basicTest(SimpleListingProfit,inputs=[1.15], printsat=False)
 
     # Testing LessThanThirdQuartileHistorical
     LTTQHresults, LTTQHsatresults = basicTest(LessThanThirdQuartileHistorical)
+
+    # Testing SpringSearch
+    SSresults, SSsatresults = basicTest(SpringSearch, printsat=False)
+    tail(sorted(SSsatresults, key = lambda x: x['Profit'], reverse=True),10)
 
     ### [Write your strategy backtests here]

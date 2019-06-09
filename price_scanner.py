@@ -11,16 +11,17 @@ from selenium.common.exceptions import NoSuchElementException
                                             # ^^ Dealing with page load failure.
 from utility_funcs import import_json_lines # Importing logged dataset
 from utility_funcs import DBchange          # Add items to database safely
+from analysis import LessThanThirdQuartileHistorical 
+                                            # Notify of buy-worthy things while running
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import time                                 # Waiting so no server-side ban
 import json                                 # Writing and reading logged dataset
-# from analysis import ---- # Later include things like SMA here
 
 ### Hyperparameters {
 navigation_time = 6 # Global wait time between page loads
 username = 'datafarmer001'
 password = 'u9hqgi3sl9'
-startloc = 200 # Item in database to start price scanning from
+startloc = 0 # Item in database to start price scanning from
 ### }
 
 # -----------------------------------====Data Cleaning Functions====-----------------------------------
@@ -148,6 +149,11 @@ if __name__ == '__main__':
             }
 
             to_write.append(pagedata)
+            if itemized: # Nonempty
+                satcheck = LessThanThirdQuartileHistorical.runindividual(pagedata)
+                if satcheck['Satisfied']:
+                    print('!!!!', 'Found a Q3 satisfying item')
+                    print(satcheck)
 
             # ========================== TODO: ANALYSIS GOES HERE ==========================
             # printable_outputs = anaylze([method1, method2, ...], logfile)
@@ -159,6 +165,12 @@ if __name__ == '__main__':
             # Update pagedata file every 10 items
             if (itemno + 1)%10 == 0:
                 DBchange(to_write,'update','pagedata.txt')
+                # analyzer = LessThanThirdQuartileHistorical # This is the general idea
+                # outputs = analyzer.run(to_write)           # Unfortunately, buggy
+                # outputs = [x for x in outputs if x['Satisfied']]
+                # if outputs:
+                #     for sat in outputs:
+                #         print('!!!!' + str(sat))
                 to_write = []
                 print('    [WROTE TO FILE.]')
                 print()
