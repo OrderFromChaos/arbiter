@@ -16,22 +16,17 @@
 ###    This will probably allow for actual automation, as well - 
 ###    we can have program change inputs on another socket, and change it while it runs.
 
-### 2. Implement better fault tolerance for "NoSuchElementException"
-###    In other words, write a with()able function which has graceful error handling
-
-### 3. Dataset read is pretty slow - figure out a way to improve read rates. See analysis.py for
+### 2. Dataset read is pretty slow - figure out a way to improve read rates. See analysis.py for
 ###    how slow it tends to be.
 
-### 4. Bring price_scanner.py and utility_funcs.py in compliance with pylint + 100 character lines.
+### 3. Bring price_scanner.py and utility_funcs.py in compliance with pylint + 100 character lines.
 
-### 5. Log low volume items separately so it takes up less memory. Ideally, create a global
+### 4. Log low volume items separately so it takes up less memory. Ideally, create a global
 ###    variable settings database for these kind of filterings.
 
-### 6. Add a requirements.txt
+### 5. Fix inconsistent casing (do camelCase on functions, caps for const.)
 
-### 7. Fix inconsistent casing (do camelCase on functions, caps for const.)
-
-### 8. Contemplate adding type hints
+### 6. Contemplate adding type hints
 
 from selenium import webdriver              # Primary navigation of Steam price data.
 from selenium.common.exceptions import NoSuchElementException 

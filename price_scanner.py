@@ -22,6 +22,7 @@ navigation_time = 6 # Global wait time between page loads
 username = 'datafarmer001'
 password = 'u9hqgi3sl9'
 startloc = 0 # Item in database to start price scanning from
+nloops = 10
 ### }
 
 # -----------------------------------====Data Cleaning Functions====-----------------------------------
@@ -113,64 +114,60 @@ if __name__ == '__main__':
             raise Exception('Well why didn\'t you??')
 
     to_write = [] # Item data to be updated in database
-    for itemno, item in enumerate(of_interest):
-        browser.get(item['URL'])
-        with waitUntil(navigation_time):
-            browser.implicitly_wait(15)
-            try:
-                full_listing = find_css('#searchResultsRows').text
-            except NoSuchElementException:
-                browser.refresh()
-                time.sleep(navigation_time*2)
-                full_listing = find_css('#searchResultsRows').text
-            itemized = cleanListing(full_listing,item['Item Name'])
-            try:
-                buy_rate = readUSD(find_css('#market_commodity_buyrequests > '
-                                                'span:nth-child(2)').text)
-                # ^^ Highest buy order currently on the market. 
-                # If a price drops below this, it will immediately be purchased by the buy orderer.
-            except NoSuchElementException:
-                buy_rate = 0 # Sometimes there are no buy orders
-            
-            # Grab volumetric data for recent sales/prices (from chart).
-            volumetrics = find_css('body > div.responsive_page_frame.with_header > div.responsive_page_content > div.responsive_page_template_content')
-            recent_data = cleanVolumetric(volumetrics.get_attribute('outerHTML'))
-            
-            pagedata = {
-                'Item Name': item['Item Name'],
-                'URL': browser.current_url, # In case they update the URL and leave a redirect
-                'Special Type': item['Special Type'],
-                'Condition': item['Condition'],
-                'Sales/Day': round(len(recent_data)/30, 2),
-                'Buy Rate': buy_rate,
-                'Date': datetime.now(),
-                'Sales from last month': recent_data,
-                'Listings': itemized
-            }
+    for iterator in range(nloops):
+        for itemno, item in enumerate(of_interest):
+            browser.get(item['URL'])
+            with waitUntil(navigation_time):
+                browser.implicitly_wait(15)
+                try:
+                    full_listing = find_css('#searchResultsRows').text
+                except NoSuchElementException:
+                    browser.refresh()
+                    time.sleep(navigation_time*2)
+                    full_listing = find_css('#searchResultsRows').text
+                itemized = cleanListing(full_listing,item['Item Name'])
+                try:
+                    buy_rate = readUSD(find_css('#market_commodity_buyrequests > '
+                                                    'span:nth-child(2)').text)
+                    # ^^ Highest buy order currently on the market. 
+                    # If a price drops below this, it will immediately be purchased by the buy orderer.
+                except NoSuchElementException:
+                    buy_rate = 0 # Sometimes there are no buy orders
+                
+                # Grab volumetric data for recent sales/prices (from chart).
+                volumetrics = find_css('body > div.responsive_page_frame.with_header > div.responsive_page_content > div.responsive_page_template_content')
+                recent_data = cleanVolumetric(volumetrics.get_attribute('outerHTML'))
+                
+                pagedata = {
+                    'Item Name': item['Item Name'],
+                    'URL': browser.current_url, # In case they update the URL and leave a redirect
+                    'Special Type': item['Special Type'],
+                    'Condition': item['Condition'],
+                    'Sales/Day': round(len(recent_data)/30, 2),
+                    'Buy Rate': buy_rate,
+                    'Date': datetime.now(),
+                    'Sales from last month': recent_data,
+                    'Listings': itemized
+                }
 
-            to_write.append(pagedata)
-            if itemized: # Nonempty
-                satcheck = LessThanThirdQuartileHistorical.runindividual(pagedata)
-                if satcheck['Satisfied']:
-                    print('!!!!', 'Found a Q3 satisfying item')
-                    print(satcheck)
+                to_write.append(pagedata)
+                if itemized: # Nonempty
+                    satcheck = LessThanThirdQuartileHistorical.runindividual(pagedata)
+                    if satcheck['Satisfied']:
+                        print('!!!!', 'Found a Q3 satisfying item')
+                        print(satcheck)
 
-            # ========================== TODO: ANALYSIS GOES HERE ==========================
-            # printable_outputs = anaylze([method1, method2, ...], logfile)
-            # Logfile should only be written if positive outcome; we can do testing on analysis.py
+                print('    ' + str(itemno+1) + '.', item['Item Name'], itemized[0], pagedata["Sales/Day"])
 
-            print('    ' + str(itemno+1) + '.', item['Item Name'], itemized[0], pagedata["Sales/Day"])
-            # TODO: Add analysis output to print statement
-
-            # Update pagedata file every 10 items
-            if (itemno + 1)%10 == 0:
-                DBchange(to_write,'update','pagedata.txt')
-                # analyzer = LessThanThirdQuartileHistorical # This is the general idea
-                # outputs = analyzer.run(to_write)           # Unfortunately, buggy
-                # outputs = [x for x in outputs if x['Satisfied']]
-                # if outputs:
-                #     for sat in outputs:
-                #         print('!!!!' + str(sat))
-                to_write = []
-                print('    [WROTE TO FILE.]')
-                print()
+                # Update pagedata file every 10 items
+                if (itemno + 1)%10 == 0:
+                    DBchange(to_write,'update','pagedata.txt')
+                    # analyzer = LessThanThirdQuartileHistorical # This is the general idea
+                    # outputs = analyzer.run(to_write)           # Unfortunately, buggy
+                    # outputs = [x for x in outputs if x['Satisfied']]
+                    # if outputs:
+                    #     for sat in outputs:
+                    #         print('!!!!' + str(sat))
+                    to_write = []
+                    print('    [WROTE TO FILE.]')
+                    print()

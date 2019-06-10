@@ -15,10 +15,6 @@
 ### 2. Incorporate stuff from expectedprice.py and linregtest.py
 ###    (early analysis attempts)
 
-### 3. Figure out how to incorporate analysis funcs into price_scanner.py
-###    Convert functions to individual checks; this is needed to incorporate them into
-###    page_gatherer and price_scanner...
-
 from utility_funcs import import_json_lines # Importing logged dataset
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import json                                 # Writing and reading logged dataset
@@ -219,12 +215,6 @@ class SpringSearch:
         itemdict['Profit'] = round((itemdict['Ratio']-1.15)*Q1,2) # Buy at Q1, sell at Q3
 
         return itemdict
-
-
-### TODO: Implement "spring" model - items that can likely be buy/sold right away just by vigilantly
-###       watching.
-
-# [INSERT MORE HERE]
 
 #######################
 
