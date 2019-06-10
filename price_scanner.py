@@ -35,6 +35,8 @@ def readUSD(dollars):
 def cleanListing(mess, itemname):
     ### Sometimes Steam will dynamically show "Sold!" or the like when it sells at item. 
     #   This function prevents the reader from stumbling.
+    ### TODO: Apparently if I'm selling something on an item in the database, it fails to do parsing
+    ###       correctly. Fix.
     mess = mess.split('\n')
     # Does this instead of a spacing-based system because 'Sold!' changes the spacing.
     disallowed = {'PRICE', 'SELLER', 'NAME', 'Sold!', 'Buy Now', 

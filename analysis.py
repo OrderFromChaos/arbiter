@@ -130,15 +130,17 @@ class SimpleListingProfit:
                                      # For CS:GO, this is 15%
     def run(self, dataset):
         outputs = []
-        dataset = listingFilter(dataset,2)
+        dataset = listingFilter(dataset,4)
         for item in dataset:
             itemdict = dict()
             listings = item['Listings']
             relevant_listings = sorted(listings[:2])
             ratio = relevant_listings[1]/relevant_listings[0]
 
-            itemdict['Satisfied'] = ratio > self.percentage
+            itemdict['Satisfied'] = (ratio > self.percentage and
+                                     item['Special Type'] != 'Souvenir')
             itemdict['Name'] = item['Item Name']
+            itemdict['Price'] = relevant_listings[0]
             itemdict['Ratio'] = round(ratio,2)
 
             outputs.append(itemdict)
@@ -148,8 +150,6 @@ class LessThanThirdQuartileHistorical:
     def run(dataset):
         outputs = []
         # dataset = dateFilter(dataset,15)
-        # for index, item in enumerate(dataset): # Filter out now irrelevant info
-        #     dataset[index]['Sales from last month'] = [x[1] for x in item['Sales from last month']]
         dataset = volumeFilter(dataset,30) # Q3 is meaningless without this
         # dataset = removeOutliers(dataset,'Sales from last month',2) # Bugged for some reason
         for item in dataset:
@@ -159,14 +159,7 @@ class LessThanThirdQuartileHistorical:
         return outputs
     def runindividual(item):
         itemdict = dict()
-        ### Assume already volume filtered
-        # if not dataset_run:
-        #     # Filter checking
-        #     out = volumeFilter([item],30)
-        #     if not out: # Empty return
-        #         itemdict['Satisfied'] = False
-        #         itemdict['Name'] = item['Item Name']
-        #         itemdict['Quartiles'] = itemdict['Lowest Listing'] = itemdict['Sales/Day'] = itemdict['Expected Profit'] = None
+        # Assume already volume filtered
         historical = [x[1] for x in item['Sales from last month']]
 
         quarts, anchors = quartiles(historical)
@@ -191,7 +184,7 @@ class SpringSearch:
         dataset = volumeFilter(dataset,30) # Spring is likely not meaningful without large vol.
         dataset = dateFilter(dataset,15)
         for item in dataset:
-            itemdict = runIndividual(item)
+            itemdict = SpringSearch.runIndividual(item)
             outputs.append(itemdict)
         return outputs
     def runIndividual(item):
@@ -228,6 +221,7 @@ if __name__ == '__main__':
 
     # Testing SimpleListingProfit
     SLPresults, SLPsatresults = basicTest(SimpleListingProfit,inputs=[1.15], printsat=False)
+    tail(sorted(SLPsatresults, key = lambda x: x['Ratio'], reverse=True),10)
 
     # Testing LessThanThirdQuartileHistorical
     LTTQHresults, LTTQHsatresults = basicTest(LessThanThirdQuartileHistorical)
@@ -235,5 +229,3 @@ if __name__ == '__main__':
     # Testing SpringSearch
     SSresults, SSsatresults = basicTest(SpringSearch, printsat=False)
     tail(sorted(SSsatresults, key = lambda x: x['Profit'], reverse=True),10)
-
-    ### [Write your strategy backtests here]

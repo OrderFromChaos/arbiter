@@ -7,27 +7,6 @@
 ### This program gathers URLs for steam items,  as well as relevant page information for that item.
 ### The idea is to later stick it into price_scanner.py for actual arbitrage search.
 
-### TODO:
-
-### 1. Implement streaming system (data gathering should asynchronously send data to 
-###    another waiting socket which analyzes it).
-###    This will greatly increase code readability (you can stick all the page navigation into 
-###    a function, and then stick the data analysis elsewhere).
-###    This will probably allow for actual automation, as well - 
-###    we can have program change inputs on another socket, and change it while it runs.
-
-### 2. Dataset read is pretty slow - figure out a way to improve read rates. See analysis.py for
-###    how slow it tends to be.
-
-### 3. Bring price_scanner.py and utility_funcs.py in compliance with pylint + 100 character lines.
-
-### 4. Log low volume items separately so it takes up less memory. Ideally, create a global
-###    variable settings database for these kind of filterings.
-
-### 5. Fix inconsistent casing (do camelCase on functions, caps for const.)
-
-### 6. Contemplate adding type hints
-
 from selenium import webdriver              # Primary navigation of Steam price data.
 from selenium.common.exceptions import NoSuchElementException 
                                             # ^^ Dealing with page load failure.
