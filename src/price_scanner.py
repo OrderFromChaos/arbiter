@@ -49,6 +49,7 @@ def cleanListing(html):
 
     # The following line filters out any items which say 'Sold!', which is a dynamic updating
     # thing that sometimes happens during data pull.
+    # list(zip(*n)) does [(a1,b1),...] -> [[a1, a2, ...], [b1, b2, ...]]
     prices, ids = list(zip(*[(readUSD(x),y) for x,y in zip(prices, ids) if x != 'Sold!']))
     return prices, ids
 

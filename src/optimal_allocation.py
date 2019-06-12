@@ -7,10 +7,13 @@
 ### This is the continuous (over reals) 0/1 knapsack problem.
 ### https://en.wikipedia.org/wiki/Knapsack_problem#0/1_knapsack_problem
 ### However, it uses strictly positive real numbers instead of strictly positive integers.
+### We can convert this to an integer 0/1 knapsack problem simply by multiplying by 100; we are
+###     dealing with currencies, after all...
 
 def knapsack(costs, values, costlimit):
     assert len(costs) == len(values), ('Mismatched number of costs and values ' + 
                                        (len(costs),len(values)))
+    costs = [int(x*100) for x in costs] # Conversion to integer 
     n = range(len(costs))
     maxdp = {0:0} # Base case
 

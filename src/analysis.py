@@ -166,7 +166,7 @@ class LessThanThirdQuartileHistorical:
     def runindividual(item):
         # Assume already volume filtered (>30 sales last month recommended)
         itemdict = dict()
-        item = historicalDateFilter(item,7)
+        item = historicalDateFilter(item,15)
         historical = [x[1] for x in item['Sales from last month']]
 
         quarts, _ = quartiles(historical)
@@ -196,7 +196,7 @@ class SpringSearch:
         # Assume historical has >= 3 sales
         itemdict = dict()
         cutoff_ratio = 1.15
-        item = historicalDateFilter(item,7)
+        item = historicalDateFilter(item,15)
 
         historical = [x[1] for x in item['Sales from last month']]
         quarts, _ = quartiles(historical)
