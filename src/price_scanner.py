@@ -8,6 +8,7 @@
 from selenium import webdriver              # Primary navigation of Steam price data.
 from selenium.common.exceptions import NoSuchElementException 
                                             # ^^ Dealing with page load failure.
+from bs4 import BeautifulSoup               # Reading prices and seller ID from page
 from utility_funcs import import_json_lines # Importing logged dataset
 from utility_funcs import DBchange          # Add items to database safely
 from analysis import LessThanThirdQuartileHistorical 
@@ -17,11 +18,11 @@ import time                                 # Waiting so no server-side ban
 import json                                 # Writing and reading logged dataset
 
 ### Hyperparameters {
-navigation_time = 6 # Global wait time between page loads
+navigation_time = 2 # Global wait time between page loads
 username = 'datafarmer001'
 password = 'u9hqgi3sl9'
 startloc = 0 # Item in database to start price scanning from
-nloops = 10
+nloops = 12
 ### }
 
 # -----------------------------------====Data Cleaning Functions====-----------------------------------
@@ -31,17 +32,25 @@ def readUSD(dollars):
     numbers = set('0123456789.')
     return float(''.join([x for x in dollars if x in numbers]))
 
-def cleanListing(mess, itemname):
-    ### Sometimes Steam will dynamically show "Sold!" or the like when it sells at item. 
-    #   This function prevents the reader from stumbling.
-    ### TODO: Apparently if I'm selling something on an item in the database, it fails to do parsing
-    ###       correctly. Fix.
-    mess = mess.split('\n')
-    # Does this instead of a spacing-based system because 'Sold!' changes the spacing.
-    disallowed = {'PRICE', 'SELLER', 'NAME', 'Sold!', 'Buy Now', 
-                  'Counter-Strike: Global Offensive', itemname}
-    numbers = set('0123456789.')
-    return sorted([readUSD(x) for x in mess if x not in disallowed])
+def cleanListing(html):
+    ### Get prices from html output from #searchresultsrows
+    soup = BeautifulSoup(html, 'html.parser')
+    priceraw = [x for x in soup.find_all('span', class_='market_listing_price market_listing_price_with_fee')]
+    prices = []
+    for i in priceraw:
+        prices.append(i.get_text().strip())
+
+    idraw = soup.find_all('a')
+    ids = []
+    for i in idraw:
+        found = i.get('id')
+        if found:
+            ids.append(found.split('_')[1])
+
+    # The following line filters out any items which say 'Sold!', which is a dynamic updating
+    # thing that sometimes happens during data pull.
+    prices, ids = list(zip(*[(readUSD(x),y) for x,y in zip(prices, ids) if x != 'Sold!']))
+    return prices, ids
 
 def cleanVolumetric(data):
     # Parses data from the price chart on an item listing
@@ -86,7 +95,7 @@ class waitUntil():
             time.sleep(self.lengthwait-elapsed)
 
 if __name__ == '__main__':
-    DBdata = import_json_lines('../data/pagedata.txt',encoding='utf_16',numlines=11)
+    DBdata = import_json_lines('../data/pagedata1.txt',encoding='utf_16')
     of_interest = filter(DBdata)
     of_interest = of_interest[startloc:] # See hyperparams for startloc
     assert len(of_interest) >= 10, ('price_scanner.py will not write if the volume filtered dataset'
@@ -117,16 +126,26 @@ if __name__ == '__main__':
     to_write = [] # Item data to be updated in database
     for iterator in range(nloops):
         for itemno, item in enumerate(of_interest):
+            haslistings = True
             browser.get(item['URL'])
             with waitUntil(navigation_time):
                 browser.implicitly_wait(15)
                 try:
-                    full_listing = find_css('#searchResultsRows').text
+                    prices_element = find_css('#searchResultsRows')
                 except NoSuchElementException:
                     browser.refresh()
                     time.sleep(navigation_time*2)
-                    full_listing = find_css('#searchResultsRows').text
-                itemized = cleanListing(full_listing,item['Item Name'])
+                    try:
+                        prices_element = find_css('#searchResultsRows')
+                    except NoSuchElementException:
+                        # Probably no items
+                        haslistings = False
+                
+                if haslistings:
+                    itemized, IDs = cleanListing(prices_element.get_attribute('outerHTML'))
+                else:
+                    itemized, IDs = ([], [])
+                
                 try:
                     buy_rate = readUSD(find_css('#market_commodity_buyrequests > '
                                                     'span:nth-child(2)').text)
@@ -148,7 +167,8 @@ if __name__ == '__main__':
                     'Buy Rate': buy_rate,
                     'Date': datetime.now(),
                     'Sales from last month': recent_data,
-                    'Listings': itemized
+                    'Listings': itemized,
+                    'Listing IDs': IDs
                 }
 
                 to_write.append(pagedata)
@@ -157,18 +177,15 @@ if __name__ == '__main__':
                     if satcheck['Satisfied']:
                         print('!!!!', 'Found a Q3 satisfying item')
                         print(satcheck)
-
-                print('    ' + str(itemno+1) + '.', item['Item Name'], itemized[0], pagedata["Sales/Day"])
+                    # print('    ' + str(itemno+1) + '.', item['Item Name'], itemized[0], pagedata["Sales/Day"])
+                else:
+                    # print('    ' + str(itemno+1) + '.', item['Item Name'], '[]', pagedata["Sales/Day"])
+                    pass
 
                 # Update pagedata file every 10 items
                 if (itemno + 1)%10 == 0:
-                    DBchange(to_write,'update','../data/pagedata.txt')
-                    # analyzer = LessThanThirdQuartileHistorical # This is the general idea
-                    # outputs = analyzer.run(to_write)           # Unfortunately, buggy
-                    # outputs = [x for x in outputs if x['Satisfied']]
-                    # if outputs:
-                    #     for sat in outputs:
-                    #         print('!!!!' + str(sat))
+                    DBchange(to_write,'update','../data/pagedata1.txt')
                     to_write = []
                     print('    [WROTE TO FILE.]')
-                    print()
+                    # print()
+        print('New loop.')

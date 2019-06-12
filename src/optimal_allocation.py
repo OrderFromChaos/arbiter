@@ -4,7 +4,7 @@
 
 ### PURPOSE:
 ### Given cost to limited unit A and profit in unit B, how to maximize unit B profit?
-### This is the 0/1 knapsack problem...
+### This is the continuous (over reals) 0/1 knapsack problem.
 ### https://en.wikipedia.org/wiki/Knapsack_problem#0/1_knapsack_problem
 ### However, it uses strictly positive real numbers instead of strictly positive integers.
 

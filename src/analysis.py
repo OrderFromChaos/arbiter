@@ -166,20 +166,21 @@ class LessThanThirdQuartileHistorical:
     def runindividual(item):
         # Assume already volume filtered (>30 sales last month recommended)
         itemdict = dict()
-        item = historicalDateFilter(item,15)
+        item = historicalDateFilter(item,7)
         historical = [x[1] for x in item['Sales from last month']]
 
         quarts, _ = quartiles(historical)
         Q1, Q2, Q3 = quarts
 
-        itemdict['Satisfied'] = (item['Listings'][0]*1.15 < Q3 
+        itemdict['Satisfied'] = (item['Listings'][0]*1.16 < Q3 
                                     and item['Special Type'] != 'Souvenir')
         itemdict['Name'] = item['Item Name']
         itemdict['Quartiles'] = tuple(map(lambda x: round(x,2), (Q1,Q2,Q3)))
         itemdict['Lowest Listing'] = item['Listings'][0]
         itemdict['Days To Profit'] = round(1/(item['Sales/Day']/4),2)
         # ^^ x/4 because 1/4th chance to appear at or above Q3
-        itemdict['Expected Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
+        itemdict['Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
+        itemdict['Profit/Day'] = round(itemdict['Profit']*item['Sales/Day']/4,2)
 
         return itemdict
 
@@ -195,7 +196,7 @@ class SpringSearch:
         # Assume historical has >= 3 sales
         itemdict = dict()
         cutoff_ratio = 1.15
-        # item = historicalDateFilter(item,7)
+        item = historicalDateFilter(item,7)
 
         historical = [x[1] for x in item['Sales from last month']]
         quarts, _ = quartiles(historical)
@@ -207,7 +208,7 @@ class SpringSearch:
                                     # If buy rate is higher than profit pt., no chance of profit
                                     and Q1*cutoff_ratio < Q3 
                                     # Actual profit filter
-                                    and quarts[0] <= 100
+                                    and quarts[0] <= 144.77
                                     # Account balance is limited
                                 )
         itemdict['Name'] = item['Item Name']
@@ -224,7 +225,7 @@ class SpringSearch:
 
 if __name__ == '__main__':
     print('Doing inital dataset import...')
-    DBdata = import_json_lines('../data/pagedata.txt', encoding='utf_16', numlines=11)
+    DBdata = import_json_lines('../data/pagedata.txt', encoding='utf_16')
     print('Successful import! Number of entries:', len(DBdata))
     DBdata = [x for x in DBdata if volumeFilter(x, 30)]
     DBdata = [x for x in DBdata if listingFilter(x, 1)]
@@ -237,14 +238,17 @@ if __name__ == '__main__':
     print()
 
     # Testing LessThanThirdQuartileHistorical
-    LTTQHresults, LTTQHsatresults = basicTest(LessThanThirdQuartileHistorical)
+    LTTQHresults, LTTQHsatresults = basicTest(LessThanThirdQuartileHistorical, printsat=False)
+    LTTQHsatresults = sorted(LTTQHsatresults, key = lambda x: x['Profit/Day'], reverse=True)
+    head(LTTQHsatresults,10)
     print()
 
     # Testing SpringSearch
     SSresults, SSsatresults = basicTest(SpringSearch, printsat=False)
     SSsatresults = sorted(SSsatresults, key = lambda x: x['Profit/Day'], reverse=True)
     head(SSsatresults,10)
+
     print('Average daily profit at perfect information/liquidity:', round(sum([x['Profit/Day'] for x in SSsatresults]),2))
+
     portfolio_size = 100
-    print('Highest profit at',portfolio_size)
-    
+    # print('Highest profit at',portfolio_size)

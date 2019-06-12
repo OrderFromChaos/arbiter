@@ -6,7 +6,7 @@
 import json
 import datetime
 
-def import_json_lines(filename, encoding='utf_16', numlines=11):
+def import_json_lines(filename, encoding='utf_16', numlines=12):
     with open(filename, 'r', encoding=encoding) as f:
         data = f.readlines()
     jsondata = []
@@ -24,7 +24,8 @@ def import_json_lines(filename, encoding='utf_16', numlines=11):
         'Buy Rate': float(pagedata['Buy Rate']),
         'Date': eval(pagedata['Date']),
         'Sales from last month': eval(pagedata['Sales from last month']),
-        'Listings': eval(pagedata['Listings'])
+        'Listings': eval(pagedata['Listings']),
+        'Listing IDs': eval(pagedata['Listing IDs'])
     } for pagedata in jsondata]
 
     return newdata
@@ -48,6 +49,7 @@ def DBchange(entries,state,DBfile):
                 # eval()'able.
                 entry['Sales from last month'] = str(entry['Sales from last month'])
                 entry['Listings'] = str(entry['Listings'])
+                entry['Listing IDs'] = str(entry['Listing IDs'])
                 # ^^ Don't want it to spread these across multiple lines (makes parsing hard)
                 prettyentry = json.dumps(entry, indent=4)
                 f.write(prettyentry)
@@ -65,6 +67,7 @@ def DBchange(entries,state,DBfile):
         DBchange(dataset, 'add', DBfile)
     elif state == 'sort': # Human-compatibility; sort by lowest listing
         dataset = import_json_lines(DBfile, encoding='utf_16')
+        dataset = [x for x in dataset if len(x['Listings']) > 0]
         dataset = sorted(dataset, key=lambda x: x['Listings'][0], reverse=True)
         with open(DBfile,'w'):
             pass
@@ -72,4 +75,4 @@ def DBchange(entries,state,DBfile):
 
 if __name__ == '__main__':
     to_add = []
-    DBchange(to_add,'sort','../data/pagedata.txt')
+    DBchange(to_add,'sort','../data/pagedata1.txt')

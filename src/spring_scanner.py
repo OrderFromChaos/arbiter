@@ -82,7 +82,7 @@ class waitUntil():
             time.sleep(self.lengthwait-elapsed)
 
 if __name__ == '__main__':
-    DBdata = import_json_lines('../data/pagedata.txt',encoding='utf_16',numlines=11)
+    DBdata = import_json_lines('../data/pagedata.txt',encoding='utf_16')
     of_interest = [x for x in DBdata if volumeFilter(x,30)]
     of_interest = [x for x in of_interest if SpringSearch.runIndividual(x)['Satisfied']]
     of_interest = of_interest[startloc:] # See hyperparams for startloc
