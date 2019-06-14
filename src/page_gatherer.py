@@ -90,16 +90,16 @@ def cleanVolumetric(data):
     data = data[data.find('var line1')+10:data.find(']];')+2] # Gets all price data from chart
     if data == '': # No last month sales
         return []
-    betterData = eval(data) # JS has the same format lists as Python, so eval is fine
-    betterData = [[x[0][:3], x[0][4:6], x[0][7:11], x[0][12:14], x[1]] for x in betterData] 
+    better_data = eval(data) # JS has the same format lists as Python, so eval is fine
+    better_data = [[x[0][:3], x[0][4:6], x[0][7:11], x[0][12:14], x[1]] for x in better_data] 
     #  ^^ Cuts date info into easily accessible bits
     month_lookup = {'Jan': 1, 'Feb': 2, 'Mar': 3,
                     'Apr': 4, 'May': 5, 'Jun': 6,
                     'Jul': 7, 'Aug': 8, 'Sep': 9,
                     'Oct': 10, 'Nov': 11, 'Dec': 12}
-    betterData = [[datetime(year=int(x[2]), month=month_lookup[x[0]],
+    better_data = [[datetime(year=int(x[2]), month=month_lookup[x[0]],
                     day=int(x[1]), hour=int(x[3])), x[4]]
-                    for x in betterData]
+                    for x in better_data]
 
     # Cuts data to recent data (within last 30 days of sales)
     last_month = datetime.now() - timedelta(days=30)
