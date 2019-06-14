@@ -102,11 +102,11 @@ def cleanVolumetric(data):
                     for x in betterData]
 
     # Cuts data to recent data (within last 30 days of sales)
-    lastMonth = datetime.now() - timedelta(days=30)
+    last_month = datetime.now() - timedelta(days=30)
     now = datetime.now()
-    lastMonthData = [x for x in betterData if lastMonth < x[0] < now]
+    last_month_data = [x for x in better_data if last_month < x[0] < now]
     
-    return lastMonthData
+    return last_month_data
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # -----------------------------------===============================-------------------------------
