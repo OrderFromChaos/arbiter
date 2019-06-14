@@ -155,8 +155,8 @@ sign_in.click()
 # Since we're using a verified account, need to have human fill out 2FA
 # Currently locked to my phone
 with WaitUntil(NAVIGATION_TIME):
-    codeConfirmation = input('Did you enter your Steam confirmation code? [y/n]')
-    if codeConfirmation not in ['y', 'Y']:
+    code_confirmation = input('Did you enter your Steam confirmation code? [y/n]')
+    if code_confirmation not in ['y', 'Y']:
         raise Exception("Well why didn't you??")
 
 item_no = 0
