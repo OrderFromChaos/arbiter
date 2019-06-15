@@ -178,6 +178,7 @@ if __name__ == '__main__':
                     if satcheck['Satisfied']:
                         print('!!!!', 'Found a Q3 satisfying item')
                         print(satcheck)
+                        DBchange([pagedata],'add','../data/LTTQHitems.txt')
                     # print('    ' + str(itemno+1) + '.', item['Item Name'], itemized[0], pagedata["Sales/Day"])
                 else:
                     # print('    ' + str(itemno+1) + '.', item['Item Name'], '[]', pagedata["Sales/Day"])
@@ -188,5 +189,4 @@ if __name__ == '__main__':
                     DBchange(to_write,'update','../data/pagedata1.txt')
                     to_write = []
                     print('    [WROTE TO FILE.]')
-                    # print()
         print('New loop.')

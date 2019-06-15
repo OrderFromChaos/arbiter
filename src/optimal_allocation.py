@@ -13,16 +13,17 @@
 def knapsack(costs, values, costlimit):
     assert len(costs) == len(values), ('Mismatched number of costs and values ' + 
                                        (len(costs),len(values)))
-    costs = [int(x*100) for x in costs] # Conversion to integer 
-    n = range(len(costs))
-    maxdp = {0:0} # Base case
+    costs = [int(x*100) for x in costs] # Conversion to integer costs
 
-    for itemcount in range(1,n):
-        cost = costs[itemcount]
-        previous = maxdp[itemcount-1]
-        if cost > costlimit:
-            maxdp[itemcount] = previous
-        else:
-            maxdp[itemcount] = max(previous, previous + )
-            newsum = maxdp[itemcount-1] + cost
+    # n = range(len(costs))
+    # maxdp = {0:0} # Base case
+
+    # for itemcount in range(1,n):
+    #     cost = costs[itemcount]
+    #     previous = maxdp[itemcount-1]
+    #     if cost > costlimit:
+    #         maxdp[itemcount] = previous
+    #     else:
+    #         maxdp[itemcount] = max(previous, previous + )
+    #         newsum = maxdp[itemcount-1] + cost
 

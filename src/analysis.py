@@ -8,6 +8,7 @@
 ### 2. When run as itself, the ability to backtest strategies during development.
 
 from utility_funcs import import_json_lines # Importing logged dataset
+from utility_funcs import DBchange          # Writing analysis items
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import json                                 # Writing and reading logged dataset
 from math import floor, ceil                # Data analysis use in medians
@@ -112,7 +113,11 @@ def removeOutliers(item, key, sigma):
     return item
 
 def historicalDateFilter(item, ndays):
-    filter_date = item['Date'] - timedelta(days=ndays)
+    try:
+        filter_date = item['Date'] - timedelta(days=ndays)
+    except TypeError:
+        raise Exception('item[\'Date\'] is a string! See here:' + str(repr(item['Date'])) + '\n' +
+                        str(item))
     historical = item['Sales from last month']
     if isinstance(historical[0],list): # Fed in as standard [[datetime, price],...] format
         item['Sales from last month'] = [x for x in historical if x[0] >= filter_date]
@@ -172,8 +177,9 @@ class LessThanThirdQuartileHistorical:
         quarts, _ = quartiles(historical)
         Q1, Q2, Q3 = quarts
 
-        itemdict['Satisfied'] = (item['Listings'][0]*1.16 < Q3 
-                                    and item['Special Type'] != 'Souvenir')
+        itemdict['Satisfied'] = (item['Listings'][0]*1.16 < Q3
+                                 and item['Listings'][0] < Q1
+                                 and item['Special Type'] != 'Souvenir')
         itemdict['Name'] = item['Item Name']
         itemdict['Quartiles'] = tuple(map(lambda x: round(x,2), (Q1,Q2,Q3)))
         itemdict['Lowest Listing'] = item['Listings'][0]
@@ -225,7 +231,7 @@ class SpringSearch:
 
 if __name__ == '__main__':
     print('Doing inital dataset import...')
-    DBdata = import_json_lines('../data/pagedata.txt', encoding='utf_16')
+    DBdata = import_json_lines('../data/pagedata1.txt', encoding='utf_16')
     print('Successful import! Number of entries:', len(DBdata))
     DBdata = [x for x in DBdata if volumeFilter(x, 30)]
     DBdata = [x for x in DBdata if listingFilter(x, 1)]
@@ -234,19 +240,24 @@ if __name__ == '__main__':
 
     # Testing SimpleListingProfit
     SLPresults, SLPsatresults = basicTest(SimpleListingProfit,inputs=[1.15], printsat=False)
-    head(sorted(SLPsatresults, key = lambda x: x['Ratio'], reverse=True),10)
+    SLPsatresults = sorted(SLPsatresults, key = lambda x: x['Ratio'], reverse=True)
+    head(SLPsatresults,10)
     print()
 
     # Testing LessThanThirdQuartileHistorical
     LTTQHresults, LTTQHsatresults = basicTest(LessThanThirdQuartileHistorical, printsat=False)
     LTTQHsatresults = sorted(LTTQHsatresults, key = lambda x: x['Profit/Day'], reverse=True)
     head(LTTQHsatresults,10)
+    DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
+             'add',
+             '../data/LTTQHitems.txt')
     print()
 
     # Testing SpringSearch
     SSresults, SSsatresults = basicTest(SpringSearch, printsat=False)
     SSsatresults = sorted(SSsatresults, key = lambda x: x['Profit/Day'], reverse=True)
     head(SSsatresults,10)
+    print()
 
     print('Average daily profit at perfect information/liquidity:', round(sum([x['Profit/Day'] for x in SSsatresults]),2))
 

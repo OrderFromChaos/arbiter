@@ -50,7 +50,8 @@ def DBchange(entries,state,DBfile):
                 entry['Sales from last month'] = str(entry['Sales from last month'])
                 entry['Listings'] = str(entry['Listings'])
                 entry['Listing IDs'] = str(entry['Listing IDs'])
-                # ^^ Don't want it to spread these across multiple lines (makes parsing hard)
+                # ^^ Don't want it to spread these lists across multiple lines
+                # Try-except block is for extensibility
                 prettyentry = json.dumps(entry, indent=4)
                 f.write(prettyentry)
                 f.write('\n')
