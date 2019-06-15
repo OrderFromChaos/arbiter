@@ -131,7 +131,7 @@ class WaitUntil():
 # for new items only.
 
 # !!! This needs to be changed to reflect switch to pandas !!!
-DBdata = import_json_lines('../data/pagedata.txt', encoding='utf_16', numlines=11)
+DBdata = import_json_lines('../data/pagedata.txt', encoding='utf-8', numlines=11)
 ignore_names = set([x['Item Name'] for x in DBdata])
 
 # Assume chromedriver is in /usr/bin or one of the $PATH directories.
@@ -234,12 +234,13 @@ for page_no in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
         else:
             print('    ' + str(item_no) + '.', 'Skipped because seen before!')
 
-    item_info_df.append(pdjson.json_normalize(obtained_data))
+    item_info_df = item_info_df.append(pdjson.json_normalize(obtained_data))
     
     # Rewrite file at the end of every page (so every (NAVIGATION_TIME*10) seconds at most)
     # DBchange(obtained_data,'add','../data/pagedata.txt')
 
     print()
 
-with pd.HDFStore('../data/info.h5') as info_store:
-    info_store.put('item_info_df',  item_info_df)
+item_info_df.index = np.arange(len(item_info_df))
+item_info_df.to_msgpack('../data/item_info.msg', append=True)
+

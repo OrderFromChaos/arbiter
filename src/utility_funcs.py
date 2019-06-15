@@ -5,6 +5,7 @@
 
 import json
 import datetime
+import pandas as pd
 
 # def import_json_lines(filename, encoding='utf_8'):
 
@@ -14,8 +15,15 @@ import datetime
 #     with open(filename, 'r', encoding=encoding) as f:
 #         for line in f.readlines():
             
+def read_json(file_name):
+    return pandas.read_json(file_name, date_unit='ns')
 
-def import_json_lines(filename, encoding='utf_16', numlines=11):
+def to_json(df):
+    return pandas.to_json(df)
+
+
+
+def import_json_lines(filename, encoding='utf-8', numlines=11):
     with open(filename, 'r', encoding=encoding) as f:
         data = f.readlines()
     jsondata = []
@@ -71,7 +79,7 @@ def DBchange(entries, state, DBfile):
                 f.write(prettyEntry)
                 f.write('\n')
     elif state == 'update':
-        dataset = import_json_lines(DBfile, encoding='utf_16')
+        dataset = import_json_lines(DBfile, encoding='utf-8')
         position = [x['Item Name'] for x in dataset]
         quick_lookup = set(position)
         for entry in entries:
@@ -90,4 +98,4 @@ def DBchange(entries, state, DBfile):
 
 if __name__ == '__main__':
     to_add = []
-    DBchange(to_add,'sort','../data/pagedata.txt')
+    DBchange(to_add, 'sort', '../data/pagedata.txt')
