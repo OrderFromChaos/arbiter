@@ -22,6 +22,7 @@ from urllib.parse import urlencode
 from utility_funcs import DBchange          # Add items to database safely
 from utility_funcs import import_json_lines # Importing logged dataset
 
+import calendar
 import json                                 # Writing and reading logged dataset
 import numpy as np
 import os
@@ -41,7 +42,8 @@ condition_dict = {
     'Battle-Scarred': 4}
 condition = condition_dict['Factory New']
 
-appid = 730
+# Testing 440, which is the Application ID of Team Fortress 2.
+appid = 440
 general_params = {
     'q': '',
     'category_' + str(appid) + '_ItemSet[]': 'any',
@@ -49,7 +51,7 @@ general_params = {
     'category_' + str(appid) + '_StickerCapsule[]': 'any',
     'category_' + str(appid) + '_TournamentTeam[]': 'any',
     'category_' + str(appid) + '_Weapon[]': 'any',
-    'category_' + str(appid) + '_Exterior[]': 'tag_WearCategory' + str(condition),
+#    'category_' + str(appid) + '_Exterior[]': 'tag_WearCategory' + str(condition),
     'appid': str(appid)}
 
 
@@ -93,10 +95,7 @@ def cleanVolumetric(data):
     better_data = eval(data) # JS has the same format lists as Python, so eval is fine
     better_data = [[x[0][:3], x[0][4:6], x[0][7:11], x[0][12:14], x[1]] for x in better_data] 
     #  ^^ Cuts date info into easily accessible bits
-    month_lookup = {'Jan': 1, 'Feb': 2, 'Mar': 3,
-                    'Apr': 4, 'May': 5, 'Jun': 6,
-                    'Jul': 7, 'Aug': 8, 'Sep': 9,
-                    'Oct': 10, 'Nov': 11, 'Dec': 12}
+    month_lookup = {mo: n for (n, mo) in enumerate(calendar.month_abbr) if n > 0} 
     better_data = [[datetime(year=int(x[2]), month=month_lookup[x[0]],
                     day=int(x[1]), hour=int(x[3])), x[4]]
                     for x in better_data]
@@ -166,6 +165,65 @@ PAGE_DIRECTION = 1 if INITIAL_PAGE < FINAL_PAGE else -1
 testing_list = []
 item_info_df = pd.DataFrame()
 
+
+# The code below which is commented out was an attempt to make the
+# append to the DataFrame directly rather than make a list of 10 dicts
+# and run pandas.io.json.json_noramlize. I'm still not sure if this is
+# really that much more efficient...
+#
+# for page_no in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
+#     print('----------Page Number: ' + str(page_no) + ' ----------')
+#     search_url = GENERAL_URL + '#p' + str(page_no) + '_price_desc'
+
+#     browser.get(search_url)
+#     time.sleep(NAVIGATION_TIME)
+#     for search_page in range(10):
+#         name_element = find_css('#result_' + str(search_page) + '_name')
+#         name = name_element.text
+#         item_no += 1
+#         if name not in ignore_names: # ie not seen before
+#             with WaitUntil(NAVIGATION_TIME):
+#                 name_element.click()
+#                 browser.implicitly_wait(15) # Make sure everything loads in
+#                 try:
+#                     full_listing = find_css('#searchResultsRows').text
+#                 except NoSuchElementException:
+#                     browser.refresh()
+#                     time.sleep(NAVIGATION_TIME*2)
+#                     full_listing = find_css('#searchResultsRows').text
+#                 itemized = cleanListing(full_listing, name)
+#                 try:
+#                     buy_rate = readUSD(find_css('#market_commodity_buyrequests > '
+#                                                     'span:nth-child(2)').text)
+#                     # ^^ Highest buy order currently on the market. 
+#                     # If a price drops below this, it will immediately be purchased by the buy
+#                     # orderer. 
+#                 except NoSuchElementException:
+#                     buy_rate = 0 # Sometimes there are no buy orders
+
+#                 # Grab volumetric data for recent sales/prices (from chart).
+#                 volumetrics = find_css('body > div.responsive_page_frame.with_header >'
+#                                        'div.responsive_page_content >'
+#                                        'div.responsive_page_template_content')
+#                 recent_data = cleanVolumetric(volumetrics.get_attribute('outerHTML'))
+
+#                 item_split = name.split(' ')
+#                 new_row = pd.DataFrame(
+#                     {'Item Name': name,
+#                     'URL': browser.current_url,
+#                     'Special Type': ['None', 'Souvenir'][item_split[0] == 'Souvenir'],
+#                     'Condition': ' '.join(item_split[-2:]),
+#                         # TODO: This fails for anything b4 the implementation of item conditions ex:
+#                         # https://steamcommunity.com/market/listings/730/%E2%98%85%20Navaja%20Knife
+#                      'Sales/Day': round(len(recent_data)/30, 2),
+#                     'Buy Rate': buy_rate,
+#                     'Date': datetime.now(),
+#                     'Sales from last month': recent_data,
+#                     'Listings': itemized})
+
+
+                
+
 for page_no in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
     # These pages are like this one:
     # https://steamcommunity.com/market/search?q=navaja+knife
@@ -220,7 +278,7 @@ for page_no in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
                     'Sales from last month': recent_data,
                     'Listings': itemized
                 }
-                if itemized: # Nonzero
+                if len(itemized) > 0: # Nonzero
                     print('    ' + str(item_no) + '.', name, 'lowest_price=' + str(itemized[0]), 
                         'sales/day=' + str(pagedata["Sales/Day"]))
                 else:
@@ -242,5 +300,7 @@ for page_no in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
     print()
 
 item_info_df.index = np.arange(len(item_info_df))
-item_info_df.to_msgpack('../data/item_info.msg', append=True)
+
+# Write to HDF5
+item_info_df.to_hdf('../data/item_info.h5', 'testing_tf2')
 
