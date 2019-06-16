@@ -129,13 +129,8 @@ class WaitUntil():
 # Import old found items, ignore any with the same name. We're looking
 # for new items only.
 
-<<<<<<< HEAD
-# Import old found items, ignore any with the same name. We're looking for new items only.
-DBdata = import_json_lines('../data/pagedata.txt', encoding='utf_16')
-=======
-# !!! This needs to be changed to reflect switch to pandas !!!
-DBdata = import_json_lines('../data/pagedata.txt', encoding='utf-8', numlines=11)
->>>>>>> vks
+# TODO: This needs to be changed to reflect switch to pandas
+DBdata = import_json_lines('../data/pagedata.txt', encoding='utf_8')
 ignore_names = set([x['Item Name'] for x in DBdata])
 
 # Assume chromedriver is in /usr/bin or one of the $PATH directories.

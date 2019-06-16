@@ -7,17 +7,6 @@ import json
 import datetime
 import pandas as pd
 
-<<<<<<< HEAD
-def import_json_lines(filename, encoding='utf_16', numlines=12):
-=======
-# def import_json_lines(filename, encoding='utf_8'):
-
-#     """
-    
-#     """
-#     with open(filename, 'r', encoding=encoding) as f:
-#         for line in f.readlines():
-            
 def read_json(file_name):
     return pandas.read_json(file_name, date_unit='ns')
 
@@ -26,8 +15,7 @@ def to_json(df):
 
 
 
-def import_json_lines(filename, encoding='utf-8', numlines=11):
->>>>>>> vks
+def import_json_lines(filename, encoding='utf_8', numlines=12):
     with open(filename, 'r', encoding=encoding) as f:
         data = f.readlines()
     jsondata = []
@@ -79,17 +67,11 @@ def DBchange(entries, state, DBfile):
                 entry['Sales from last month'] = str(entry['Sales from last month'])
                 # Don't want it to spread these across multiple lines (makes parsing hard)
                 entry['Listings'] = str(entry['Listings'])
-<<<<<<< HEAD
                 entry['Listing IDs'] = str(entry['Listing IDs'])
                 # ^^ Don't want it to spread these lists across multiple lines
                 # Try-except block is for extensibility
                 prettyentry = json.dumps(entry, indent=4)
                 f.write(prettyentry)
-=======
-
-                prettyEntry = json.dumps(entry, indent=4)
-                f.write(prettyEntry)
->>>>>>> vks
                 f.write('\n')
     elif state == 'update':
         dataset = import_json_lines(DBfile, encoding='utf-8')
@@ -103,12 +85,8 @@ def DBchange(entries, state, DBfile):
             pass
         DBchange(dataset, 'add', DBfile)
     elif state == 'sort': # Human-compatibility; sort by lowest listing
-<<<<<<< HEAD
-        dataset = import_json_lines(DBfile, encoding='utf_16')
-        dataset = [x for x in dataset if len(x['Listings']) > 0]
-=======
         dataset = import_json_lines(DBfile, encoding='utf_8')
->>>>>>> vks
+        dataset = [x for x in dataset if len(x['Listings']) > 0]
         dataset = sorted(dataset, key=lambda x: x['Listings'][0], reverse=True)
         with open(DBfile,'w'):
             pass
@@ -116,8 +94,4 @@ def DBchange(entries, state, DBfile):
 
 if __name__ == '__main__':
     to_add = []
-<<<<<<< HEAD
     DBchange(to_add,'sort','../data/pagedata1.txt')
-=======
-    DBchange(to_add, 'sort', '../data/pagedata.txt')
->>>>>>> vks
