@@ -97,7 +97,7 @@ class WaitUntil():
             time.sleep(self.lengthwait-elapsed)
 
 # Import old found items, ignore any with the same name. We're looking for new items only.
-DBdata = import_json_lines('../data/pagedata.txt', encoding='utf_16', numlines=11)
+DBdata = import_json_lines('../data/pagedata.txt', encoding='utf_16')
 ignore_names = set([x['Item Name'] for x in DBdata])
 
 browser = webdriver.Chrome(r'/home/order/Videos/chromedriver/chromedriver') # Linux

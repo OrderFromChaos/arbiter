@@ -14,6 +14,7 @@ from utility_funcs import DBchange          # Add items to database safely
 from analysis import SpringSearch           # Filter before scanning
 from analysis import LessThanThirdQuartileHistorical 
                                             # Notify of buy-worthy things while running
+from analysis import volumeFilter           # Filter out low turnover items
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 import time                                 # Waiting so no server-side ban
 import json                                 # Writing and reading logged dataset
@@ -66,11 +67,6 @@ def cleanVolumetric(data):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # -----------------------------------===============================-----------------------------------
 
-def volumeFilter(DB,vol):
-    # Filter by volume; must have greater than 30 sales last month
-    DB = [x for x in DBdata if len(x['Sales from last month']) > vol]
-    return DB
-
 class waitUntil():
     # Enforces that everything inside a "with waitUntil(10):" block waits 10 seconds to complete
     # For more info, see https://jeffknupp.com/blog/2016/03/07/python-with-context-managers/
@@ -86,8 +82,8 @@ class waitUntil():
             time.sleep(self.lengthwait-elapsed)
 
 if __name__ == '__main__':
-    DBdata = import_json_lines('../data/pagedata.txt',encoding='utf_16',numlines=11)
-    of_interest = volumeFilter(DBdata,30)
+    DBdata = import_json_lines('../data/pagedata.txt',encoding='utf_16')
+    of_interest = [x for x in DBdata if volumeFilter(x,30)]
     of_interest = [x for x in of_interest if SpringSearch.runIndividual(x)['Satisfied']]
     of_interest = of_interest[startloc:] # See hyperparams for startloc
     assert len(of_interest) >= 10, ('price_scanner.py will not write if the volume filtered dataset'
