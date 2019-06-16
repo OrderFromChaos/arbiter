@@ -9,6 +9,7 @@ It's just me, testing sending emails using Python. Let's see if you receive this
 Best, 
 Yourself""")
 
+
 sender_email = "dunno@"
 receiver_email = "csgomarketrequests@gmail.com"
 

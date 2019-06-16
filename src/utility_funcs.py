@@ -5,13 +5,34 @@
 
 import json
 import datetime
+import pandas as pd
 
+<<<<<<< HEAD
 def import_json_lines(filename, encoding='utf_16', numlines=12):
+=======
+# def import_json_lines(filename, encoding='utf_8'):
+
+#     """
+    
+#     """
+#     with open(filename, 'r', encoding=encoding) as f:
+#         for line in f.readlines():
+            
+def read_json(file_name):
+    return pandas.read_json(file_name, date_unit='ns')
+
+def to_json(df):
+    return pandas.to_json(df)
+
+
+
+def import_json_lines(filename, encoding='utf-8', numlines=11):
+>>>>>>> vks
     with open(filename, 'r', encoding=encoding) as f:
         data = f.readlines()
     jsondata = []
-    for i in range(0,len(data)-1,numlines): # -1 as file ends in \n
-        entry = '\n'.join(data[i:i+numlines])
+    for i in range(0, len(data)-1, numlines): # -1 as file ends in \n
+        entry = '\n'.join(data[i : i + numlines])
         jsondata.append(json.loads(entry))
 
     # Reformat to expected objects
@@ -30,33 +51,48 @@ def import_json_lines(filename, encoding='utf_16', numlines=12):
 
     return newdata
 
-def DBchange(entries,state,DBfile):
-    # If state is 'add':
-    #     directly append list of dicts to end of file
-    #     [when using, make sure the dicts aren't already in the file]
-    #     (page_gatherer.py would use this)
-    # If state is 'update':
-    #     update (replace) entries with new list of dicts
-    #     compares database with given entries
-    #     would be used on price_scanner.py
-    # Assume entries are dicts but not yet json formatted
+def DBchange(entries, state, DBfile):
+    
+    """
+    If state is 'add':
+        directly append list of dicts to end of file
+        [when using, make sure the dicts aren't already in the file]
+        (page_gatherer.py would use this)
+    If state is 'update':
+        update (replace) entries with new list of dicts
+        compares database with given entries
+        would be used on price_scanner.py
+    Assume entries are dicts but not yet json formatted.
+    """
+    # if state == "add":
+    #     with open(DBfile, 'a', encoding='utf-8') as f:
+            
+
     if state == 'add':
-        with open(DBfile,'a', encoding='utf-16') as f:
+        with open(DBfile,'a', encoding='utf-8') as f:
             for entry in entries:
-                entry['Date'] = repr(entry['Date'])
-                # ^^ Single datetimes get converted into %Y-%m-%d %H:%M:%S for some reason.
+                # Single datetimes get converted into %Y-%m-%d %H:%M:%S for some reason.
                 # This is not very easy to work with, so to decrease complexity, I just make it
                 # eval()'able.
+                entry['Date'] = repr(entry['Date'])
+
                 entry['Sales from last month'] = str(entry['Sales from last month'])
+                # Don't want it to spread these across multiple lines (makes parsing hard)
                 entry['Listings'] = str(entry['Listings'])
+<<<<<<< HEAD
                 entry['Listing IDs'] = str(entry['Listing IDs'])
                 # ^^ Don't want it to spread these lists across multiple lines
                 # Try-except block is for extensibility
                 prettyentry = json.dumps(entry, indent=4)
                 f.write(prettyentry)
+=======
+
+                prettyEntry = json.dumps(entry, indent=4)
+                f.write(prettyEntry)
+>>>>>>> vks
                 f.write('\n')
     elif state == 'update':
-        dataset = import_json_lines(DBfile, encoding='utf_16')
+        dataset = import_json_lines(DBfile, encoding='utf-8')
         position = [x['Item Name'] for x in dataset]
         quick_lookup = set(position)
         for entry in entries:
@@ -67,8 +103,12 @@ def DBchange(entries,state,DBfile):
             pass
         DBchange(dataset, 'add', DBfile)
     elif state == 'sort': # Human-compatibility; sort by lowest listing
+<<<<<<< HEAD
         dataset = import_json_lines(DBfile, encoding='utf_16')
         dataset = [x for x in dataset if len(x['Listings']) > 0]
+=======
+        dataset = import_json_lines(DBfile, encoding='utf_8')
+>>>>>>> vks
         dataset = sorted(dataset, key=lambda x: x['Listings'][0], reverse=True)
         with open(DBfile,'w'):
             pass
@@ -76,4 +116,8 @@ def DBchange(entries,state,DBfile):
 
 if __name__ == '__main__':
     to_add = []
+<<<<<<< HEAD
     DBchange(to_add,'sort','../data/pagedata1.txt')
+=======
+    DBchange(to_add, 'sort', '../data/pagedata.txt')
+>>>>>>> vks
