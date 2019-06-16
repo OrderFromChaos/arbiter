@@ -93,8 +93,8 @@ def cleanVolumetric(data):
     if data == '': # No last month sales
         return []
     better_data = eval(data) # JS has the same format lists as Python, so eval is fine
+    # Cuts date info into easily accessible bits
     better_data = [[x[0][:3], x[0][4:6], x[0][7:11], x[0][12:14], x[1]] for x in better_data] 
-    #  ^^ Cuts date info into easily accessible bits
     month_lookup = {mo: n for (n, mo) in enumerate(calendar.month_abbr) if n > 0} 
     better_data = [[datetime(year=int(x[2]), month=month_lookup[x[0]],
                     day=int(x[1]), hour=int(x[3])), x[4]]
