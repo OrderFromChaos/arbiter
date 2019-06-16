@@ -11,6 +11,7 @@ from selenium.common.exceptions import NoSuchElementException
 from bs4 import BeautifulSoup               # Reading prices and seller ID from page
 from utility_funcs import import_json_lines # Importing logged dataset
 from utility_funcs import DBchange          # Add items to database safely
+from analysis import volumeFilter           # Only want high sale volume items
 from analysis import LessThanThirdQuartileHistorical 
                                             # Notify of buy-worthy things while running
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
@@ -76,11 +77,6 @@ def cleanVolumetric(data):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # -----------------------------------===============================-----------------------------------
 
-def filter(DB):
-    # Filter by volume; must have greater than 30 sales last month
-    DB = [x for x in DBdata if len(x['Sales from last month']) > 30]
-    return DB
-
 class waitUntil():
     # Enforces that everything inside a "with waitUntil(10):" block waits 10 seconds to complete
     # For more info, see https://jeffknupp.com/blog/2016/03/07/python-with-context-managers/
@@ -97,7 +93,7 @@ class waitUntil():
 
 if __name__ == '__main__':
     DBdata = import_json_lines('../data/pagedata1.txt',encoding='utf_16')
-    of_interest = filter(DBdata)
+    of_interest = [x for x in DBdata if volumeFilter(x, 30)]
     of_interest = of_interest[startloc:] # See hyperparams for startloc
     assert len(of_interest) >= 10, ('price_scanner.py will not write if the volume filtered dataset'
                                     'is smaller than 10. Current size' + str(len(of_interest)))
