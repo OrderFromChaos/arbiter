@@ -92,7 +92,7 @@ class waitUntil():
             time.sleep(self.lengthwait-elapsed)
 
 if __name__ == '__main__':
-    DBdata = import_json_lines('../data/pagedata1.txt',encoding='utf_16')
+    DBdata = import_json_lines('../data/pagedata.txt',encoding='utf_16')
     of_interest = [x for x in DBdata if volumeFilter(x, 30)]
     of_interest = of_interest[startloc:] # See hyperparams for startloc
     assert len(of_interest) >= 10, ('price_scanner.py will not write if the volume filtered dataset'
@@ -182,7 +182,7 @@ if __name__ == '__main__':
 
                 # Update pagedata file every 10 items
                 if (itemno + 1)%10 == 0:
-                    DBchange(to_write,'update','../data/pagedata1.txt')
+                    DBchange(to_write,'update','../data/pagedata.txt')
                     to_write = []
                     print('    [WROTE TO FILE.]')
         print('New loop.')
