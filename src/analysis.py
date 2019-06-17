@@ -23,7 +23,7 @@ class Backtester:
         # {satisfied: True,    # if filter condition is satisfied
         #  name: ~itemname~,   # so it can be found later
         #  metric1: ~number~,
-        #  ...}, 
+        #  ...},
         #  ...]
         # In other words, a dict of info about each item.
         global DBdata
@@ -34,7 +34,7 @@ class Backtester:
         return [x for x in self.results if x['Satisfied']]
 
 def basicTest(strategy, inputs=None, printsat=True):
-    if inputs:
+    if inputs is not None:
         backtest = Backtester(strategy(*inputs))
     else:
         backtest = Backtester(strategy)
@@ -53,7 +53,7 @@ def basicTest(strategy, inputs=None, printsat=True):
 def simpleMovingAvg(L, n):
     if len(L) < n:
         return 'N is too high for this list (' + str(len(L)) + ' < ' + str(n) + ')'
-    
+
     avg_list = []
     for i in range(0,len(L)-n):
         avg = sum(L[i:i+n])/n
@@ -141,7 +141,7 @@ def head(dataset,n): # Similar to *nix "head -n 3 /etc/datafile"
 
 class SimpleListingProfit:
     def __init__(self, percentage):
-        self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
+        self.percentage = percentage # Steam % cut on Marketplace purchases for that game.
                                      # For CS:GO, this is 15%
     def run(self, dataset):
         outputs = []
@@ -212,7 +212,7 @@ class SpringSearch:
                                 # Souvenirs aren't very predictable imo
                                     and Q3/cutoff_ratio > item['Buy Rate']
                                     # If buy rate is higher than profit pt., no chance of profit
-                                    and Q1*cutoff_ratio < Q3 
+                                    and Q1*cutoff_ratio < Q3
                                     # Actual profit filter
                                     and quarts[0] <= 144.77
                                     # Account balance is limited
@@ -231,7 +231,7 @@ class SpringSearch:
 
 if __name__ == '__main__':
     print('Doing inital dataset import...')
-    DBdata = import_json_lines('../data/pagedata1.txt', encoding='utf_16')
+    DBdata = import_json_lines('../data/pagedata 1.txt', encoding='utf_16')
     print('Successful import! Number of entries:', len(DBdata))
     DBdata = [x for x in DBdata if volumeFilter(x, 30)]
     DBdata = [x for x in DBdata if listingFilter(x, 1)]
@@ -248,7 +248,7 @@ if __name__ == '__main__':
     LTTQHresults, LTTQHsatresults = basicTest(LessThanThirdQuartileHistorical, printsat=False)
     LTTQHsatresults = sorted(LTTQHsatresults, key = lambda x: x['Profit/Day'], reverse=True)
     head(LTTQHsatresults,10)
-    DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
+    DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']],
              'add',
              '../data/LTTQHitems.txt')
     print()

@@ -7,13 +7,6 @@ import json
 import datetime
 import pandas as pd
 
-def read_json(file_name):
-    return pandas.read_json(file_name, date_unit='ns')
-
-def to_json(df):
-    return pandas.to_json(df)
-
-
 
 def import_json_lines(filename, encoding='utf_8', numlines=12):
     with open(filename, 'r', encoding=encoding) as f:
@@ -40,7 +33,7 @@ def import_json_lines(filename, encoding='utf_8', numlines=12):
     return newdata
 
 def DBchange(entries, state, DBfile):
-    
+
     """
     If state is 'add':
         directly append list of dicts to end of file
@@ -54,7 +47,7 @@ def DBchange(entries, state, DBfile):
     """
     # if state == "add":
     #     with open(DBfile, 'a', encoding='utf-8') as f:
-            
+
 
     if state == 'add':
         with open(DBfile,'a', encoding='utf-8') as f:
@@ -91,6 +84,24 @@ def DBchange(entries, state, DBfile):
         with open(DBfile,'w'):
             pass
         DBchange(dataset, 'add', DBfile)
+
+
+def read_json(file_name):
+    return pandas.read_json(file_name, date_unit='ns')
+
+def to_json(df):
+    return pandas.to_json(df)
+
+def read_hdf(file_name, index):
+    return pd.read_hdf(file_name, index)
+
+def to_hdf(df, file_name, index):
+    return df.to_hdf(file_name, index)
+
+def pagedata_to_df(file_name):
+    data_set = utility_funcs.import_json_lines(file_name, numlines=11)
+    return pd.json_normalize(data_set)
+
 
 if __name__ == '__main__':
     to_add = []
