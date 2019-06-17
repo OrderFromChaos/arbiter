@@ -15,7 +15,25 @@ def to_json(df):
 
 
 
-def import_json_lines(filename, encoding='utf_8', numlines=12):
+def import_json_lines(filename, 
+                      encoding = 'utf_8', 
+                      numlines = 12,
+                      # Config consists of names of entries and how to read them.
+                      # Should always be updated to most recent version, but left here for
+                      # functionality on things like mergeDatabase.
+                      config = lambda pagedata: {
+                        'Item Name': pagedata['Item Name'],
+                        'URL': pagedata['URL'],
+                        'Special Type': pagedata['Special Type'],
+                        'Condition': pagedata['Condition'],
+                        'Sales/Day': float(pagedata['Sales/Day']),
+                        'Buy Rate': float(pagedata['Buy Rate']),
+                        'Date': eval(pagedata['Date']),
+                        'Sales from last month': eval(pagedata['Sales from last month']),
+                        'Listings': eval(pagedata['Listings']),
+                        'Listing IDs': eval(pagedata['Listing IDs'])
+                      }):
+
     with open(filename, 'r', encoding=encoding) as f:
         data = f.readlines()
     jsondata = []
@@ -24,18 +42,7 @@ def import_json_lines(filename, encoding='utf_8', numlines=12):
         jsondata.append(json.loads(entry))
 
     # Reformat to expected objects
-    newdata = [{
-        'Item Name': pagedata['Item Name'],
-        'URL': pagedata['URL'],
-        'Special Type': pagedata['Special Type'],
-        'Condition': pagedata['Condition'],
-        'Sales/Day': float(pagedata['Sales/Day']),
-        'Buy Rate': float(pagedata['Buy Rate']),
-        'Date': eval(pagedata['Date']),
-        'Sales from last month': eval(pagedata['Sales from last month']),
-        'Listings': eval(pagedata['Listings']),
-        'Listing IDs': eval(pagedata['Listing IDs'])
-    } for pagedata in jsondata]
+    newdata = [config(pagedata) for pagedata in jsondata]
 
     return newdata
 
@@ -53,11 +60,11 @@ def DBchange(entries, state, DBfile):
     Assume entries are dicts but not yet json formatted.
     """
     # if state == "add":
-    #     with open(DBfile, 'a', encoding='utf-8') as f:
+    #     with open(DBfile, 'a', encoding='utf_8') as f:
             
 
     if state == 'add':
-        with open(DBfile,'a', encoding='utf-8') as f:
+        with open(DBfile,'a', encoding='utf_8') as f:
             for entry in entries:
                 # Single datetimes get converted into %Y-%m-%d %H:%M:%S for some reason.
                 # This is not very easy to work with, so to decrease complexity, I just make it
@@ -74,7 +81,7 @@ def DBchange(entries, state, DBfile):
                 f.write(prettyentry)
                 f.write('\n')
     elif state == 'update':
-        dataset = import_json_lines(DBfile, encoding='utf-8')
+        dataset = import_json_lines(DBfile, encoding='utf_8')
         position = [x['Item Name'] for x in dataset]
         quick_lookup = set(position)
         for entry in entries:
@@ -92,6 +99,74 @@ def DBchange(entries, state, DBfile):
             pass
         DBchange(dataset, 'add', DBfile)
 
+def mergeDatabases(old_filename, 
+                   oldlines,
+                   oldconfig, 
+                   new_filename, 
+                   newlines,
+                   newconfig,
+                   optional_output=None):
+    # Takes in two files and merges the database between the two
+    DBold = import_json_lines(old_filename, encoding='utf_8', numlines=oldlines, config=oldconfig)
+    DBnew = import_json_lines(new_filename, encoding='utf_8', numlines=newlines, config=newconfig)
+    newnames = [x['Item Name'] for x in DBnew] # For indexing
+    newset = set(newnames)        # Quick lookup
+
+    ### Special code for each merge. Delete this if you're doing a new merge {
+    for itemno in range(len(DBold)):
+        DBold[itemno]['Listing IDs'] = []
+    ### }
+
+    ### General code
+    for item in DBold:
+        currname = item['Item Name']
+        if currname in newset:
+            newindex = newnames.index(currname)
+            newmatch = DBnew[newindex]
+            if item['Date'] > newmatch['Date']:
+                DBnew[newindex] = item
+            # Otherwise leave alone
+        else:
+            DBnew.append(item)
+    
+    if optional_output:
+        # Create/clear optional_output file
+        with open(optional_output, 'w') as f:
+            pass
+        DBchange(DBnew, 'add', optional_output)
+    else:
+        # Clear newDB file and overwrite
+        with open(new_filename, 'w') as f:
+            pass
+        DBchange(DBnew, 'add', new_filename)
+        
+
 if __name__ == '__main__':
-    to_add = []
-    DBchange(to_add,'sort','../data/pagedata1.txt')
+    # to_add = []
+    # DBchange(to_add,'sort','../data/pagedata1.txt')
+    mergeDatabases('../data/pagedata.txt', 11, 
+                    lambda pagedata: {
+                        'Item Name': pagedata['Item Name'],
+                        'URL': pagedata['URL'],
+                        'Special Type': pagedata['Special Type'],
+                        'Condition': pagedata['Condition'],
+                        'Sales/Day': float(pagedata['Sales/Day']),
+                        'Buy Rate': float(pagedata['Buy Rate']),
+                        'Date': eval(pagedata['Date']),
+                        'Sales from last month': eval(pagedata['Sales from last month']),
+                        'Listings': eval(pagedata['Listings']) # Without listing IDs
+                    },
+                   '../data/utf8pagedata1.txt', 12,
+                    lambda pagedata: {
+                        'Item Name': pagedata['Item Name'],
+                        'URL': pagedata['URL'],
+                        'Special Type': pagedata['Special Type'],
+                        'Condition': pagedata['Condition'],
+                        'Sales/Day': float(pagedata['Sales/Day']),
+                        'Buy Rate': float(pagedata['Buy Rate']),
+                        'Date': eval(pagedata['Date']),
+                        'Sales from last month': eval(pagedata['Sales from last month']),
+                        'Listings': eval(pagedata['Listings']),
+                        'Listing IDs': eval(pagedata['Listing IDs'])
+                    },
+                   '../data/pagedatamerge.txt')
