@@ -8,6 +8,7 @@
 from selenium import webdriver              # Primary navigation of Steam price data.
 from selenium.common.exceptions import NoSuchElementException 
                                             # ^^ Dealing with page load failure.
+import pandas as pd                         # Primary dataset format
 from bs4 import BeautifulSoup               # Reading prices and seller ID from page
 from utility_funcs import import_json_lines # Importing logged dataset
 from utility_funcs import DBchange          # Add items to database safely
@@ -24,6 +25,7 @@ username = 'datafarmer001'
 password = 'u9hqgi3sl9'
 startloc = 0 # Item in database to start price scanning from
 nloops = 12
+verbose = False # Print data about each item when scanned
 ### }
 
 # -----------------------------------====Data Cleaning Functions====-----------------------------------
@@ -74,6 +76,10 @@ def cleanVolumetric(data):
     
     return recent_data
 
+def navigateItem(browser):
+    # TODO: For later joining of selenium-related codes
+    pass
+
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # -----------------------------------===============================-----------------------------------
 
@@ -92,11 +98,12 @@ class waitUntil():
             time.sleep(self.lengthwait-elapsed)
 
 if __name__ == '__main__':
-    DBdata = import_json_lines('../data/pagedata.txt',encoding='utf_16')
-    of_interest = [x for x in DBdata if volumeFilter(x, 30)]
-    of_interest = of_interest[startloc:] # See hyperparams for startloc
-    assert len(of_interest) >= 10, ('price_scanner.py will not write if the volume filtered dataset'
-                                    'is smaller than 10. Current size' + str(len(of_interest)))
+    DBdata = pd.read_hdf('../data/item_info.h5', 'item_info')
+    # DBdata = import_json_lines('../data/pagedata.txt',encoding='utf_8')
+    of_interest = DBdata[DBdata['Sales/Day'] >= 1]
+    # of_interest = [x for x in DBdata if volumeFilter(x, 30)]
+    of_interest = of_interest.iloc[startloc:,:]
+    # of_interest = of_interest[startloc:] # See hyperparams for startloc
     browser = webdriver.Chrome(r'/home/order/Videos/chromedriver/chromedriver') # Linux
     find_css = browser.find_element_by_css_selector
 
@@ -120,9 +127,12 @@ if __name__ == '__main__':
         if code_confirmation not in ['y','Y','yes','Yes','yep']:
             raise Exception('Well why didn\'t you??')
 
-    to_write = [] # Item data to be updated in database
+    count = 0
+    # to_write = [] # Item data to be updated in database
     for iterator in range(nloops):
-        for itemno, item in enumerate(of_interest):
+        for itemno, item in of_interest.iterrows():
+            # Note that itemno preserves the index from DBdata. Thus we need count for file writing
+            # This is convenient for DBdata updates, however...
             haslistings = True
             browser.get(item['URL'])
             with waitUntil(navigation_time):
@@ -168,21 +178,27 @@ if __name__ == '__main__':
                     'Listing IDs': IDs
                 }
 
-                to_write.append(pagedata)
+                # Itemno preserves the original DBdata index!
+                DBdata.iloc[itemno,:] = pd.Series(pagedata)
+
+                # to_write.append(pagedata)
                 if itemized: # Nonempty
                     satcheck = LessThanThirdQuartileHistorical.runindividual(pagedata)
+                    ### TODO: Once vks is done with analysis, convert this over.
+                    ###       Should function as is for now.
                     if satcheck['Satisfied']:
                         print('!!!!', 'Found a Q3 satisfying item')
                         print(satcheck)
                         DBchange([pagedata],'add','../data/LTTQHitems.txt')
-                    # print('    ' + str(itemno+1) + '.', item['Item Name'], itemized[0], pagedata["Sales/Day"])
+                    if verbose:
+                        print('    ' + str(itemno+1) + '.', item['Item Name'], itemized[0], pagedata["Sales/Day"])
                 else:
-                    # print('    ' + str(itemno+1) + '.', item['Item Name'], '[]', pagedata["Sales/Day"])
-                    pass
+                    if verbose:
+                        print('    ' + str(itemno+1) + '.', item['Item Name'], '[]', pagedata["Sales/Day"])
 
                 # Update pagedata file every 10 items
-                if (itemno + 1)%10 == 0:
-                    DBchange(to_write,'update','../data/pagedata.txt')
-                    to_write = []
+                count += 1
+                if (count + 1)%10 == 0:
+                    DBdata.to_hdf('../data/item_info.h5','item_info')
                     print('    [WROTE TO FILE.]')
         print('New loop.')
