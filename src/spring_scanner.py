@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
 
 # Author: Syris Norelli, snore001@ucr.edu
-# Last Updated: June 7, 2019
 
 ### PURPOSE:
 ### This code scans over Spring-satisfying items, defined in analysis.py
 
+
+### External Libraries
 from selenium import webdriver              # Primary navigation of Steam price data.
 from selenium.common.exceptions import NoSuchElementException 
                                             # ^^ Dealing with page load failure.
-from utility_funcs import import_json_lines # Importing logged dataset
-from utility_funcs import DBchange          # Add items to database safely
+import pandas as pd                         # Primary dataset format
+
+### Standard libraries
+import time                                 # Waiting so no server-side ban
+
+### Local Functions
 from analysis import SpringSearch           # Filter before scanning
 from analysis import LessThanThirdQuartileHistorical 
                                             # Notify of buy-worthy things while running
-from analysis import volumeFilter           # Filter out low turnover items
-from datetime import datetime, timedelta    # Volumetric sale filtering based on date
-import time                                 # Waiting so no server-side ban
-import json                                 # Writing and reading logged dataset
+from browse_itempage import browseItempage  # Scrapes data from Steam item pages
+from browse_itempage import WaitUntil       # Implements standard page waits in with block
+from browse_itempage import steamLogin      # Make code more readable
+
 
 ### Hyperparameters {
 navigation_time = 6 # Global wait time between page loads
@@ -27,59 +32,6 @@ startloc = 0 # Item in database to start price scanning from
 nloops = 10
 ### }
 
-# -----------------------------------====Data Cleaning Functions====-----------------------------------
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-def readUSD(dollars):
-    numbers = set('0123456789.')
-    return float(''.join([x for x in dollars if x in numbers]))
-
-def cleanListing(mess, itemname):
-    ### Sometimes Steam will dynamically show "Sold!" or the like when it sells at item. 
-    #   This function prevents the reader from stumbling.
-    mess = mess.split('\n')
-    # Does this instead of a spacing-based system because 'Sold!' changes the spacing.
-    disallowed = {'PRICE', 'SELLER', 'NAME', 'Sold!', 'Buy Now', 
-                  'Counter-Strike: Global Offensive', itemname}
-    numbers = set('0123456789.')
-    return sorted([readUSD(x) for x in mess if x not in disallowed])
-
-def cleanVolumetric(data):
-    # Parses data from the price chart on an item listing
-    data = data[data.find('var line1')+10:data.find(']];')+2] # Gets all price data from chart
-    if data == '': # No recent prices - rarely sold item
-        return []
-    better_data = eval(data) # JS has the same format lists as Python, so eval is fine
-    better_data = [[x[0][:3],x[0][4:6],x[0][7:11],x[0][12:14],x[1]] for x in better_data] # Cuts date info into easily accessible bits
-    month_lookup = {'Jan': 1, 'Feb': 2, 'Mar': 3,
-                    'Apr': 4, 'May': 5, 'Jun': 6,
-                    'Jul': 7, 'Aug': 8, 'Sep': 9,
-                    'Oct': 10, 'Nov': 11, 'Dec': 12}
-    better_data = [[datetime(year=int(x[2]),month=month_lookup[x[0]],day=int(x[1]), hour=int(x[3])),x[4]] for x in better_data]
-
-    # Cuts data to recent data (within last 30 days of sales)
-    last_month = datetime.now() - timedelta(days=30)
-    now = datetime.now()
-    recent_data = [x for x in better_data if last_month < x[0] < now]
-    
-    return recent_data
-
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# -----------------------------------===============================-----------------------------------
-
-class waitUntil():
-    # Enforces that everything inside a "with waitUntil(10):" block waits 10 seconds to complete
-    # For more info, see https://jeffknupp.com/blog/2016/03/07/python-with-context-managers/
-    def __init__(self, lengthwait):
-        self.start = 0
-        self.lengthwait = lengthwait
-    def __enter__(self):
-        self.start = time.time()
-        return self.start
-    def __exit__(self, *args):
-        elapsed = time.time() - self.start
-        if elapsed < self.lengthwait:
-            time.sleep(self.lengthwait-elapsed)
 
 if __name__ == '__main__':
     DBdata = import_json_lines('../data/pagedata.txt',encoding='utf_16')

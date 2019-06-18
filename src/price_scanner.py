@@ -42,7 +42,6 @@ if __name__ == '__main__':
     browser = steamLogin(browser, username, password, navigation_time)
 
     count = 0
-    # to_write = [] # Item data to be updated in database
     for iterator in range(nloops):
         for itemno, item in of_interest.iterrows():
             # Note that itemno preserves the index from DBdata. Thus we need count for file writing
@@ -55,7 +54,6 @@ if __name__ == '__main__':
                 # Itemno preserves the original DBdata index!
                 DBdata.iloc[itemno,:] = pd.Series(pagedata)
 
-                # to_write.append(pagedata)
                 if pagedata['Listings']: # Nonempty
                     satcheck = LessThanThirdQuartileHistorical.runindividual(pagedata)
                     ### TODO: Once vks is done with analysis, convert this over.
@@ -64,7 +62,6 @@ if __name__ == '__main__':
                         print('!!!!', 'Found a Q3 satisfying item')
                         print(satcheck)
                         ### TODO: Fix satisfying item writing for pandas
-                        # DBchange([pagedata],'add','../data/LTTQHitems.txt')
                     if verbose:
                         print('    ' + str(itemno+1) + '.', item['Item Name'], pagedata['Listings'][0], pagedata["Sales/Day"])
                 else:
