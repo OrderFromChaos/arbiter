@@ -50,30 +50,29 @@ def basicTest(strategy, inputs=None, printsat=True):
 ### HELPER FUNCTIONS ###
 
 # Numerical functions
-def simpleMovingAvg(L, n):
-    if len(L) < n:
-        return 'N is too high for this list (' + str(len(L)) + ' < ' + str(n) + ')'
 
-    avg_list = []
-    for i in range(0,len(L)-n):
-        avg = sum(L[i:i+n])/n
-        avg_list.append(avg)
-    return avg_list
+def simpleMovingAvg(ser, n):
+    """
+    Compute a rolling average of a pandas Series, expressed as a Series.
 
-def median(L):
-    length = len(L)
-    if length == 1:
-        return L[0], 0
-    L = sorted(L)
-    if length % 2 == 1:
-        pos = int(length/2) # int() automatically floors the result
-        return L[pos], pos
-    else:
-        rightmid = length//2
-        try:
-            return (L[rightmid-1]+L[rightmid])/2, rightmid-0.5
-        except:
-            raise Exception('!!! ' + str(L))
+    Keyword Arguments
+    ser -- a pandas Series
+    n -- the size of the window
+    """
+
+    if series.shape[0] < n:
+        raise Exception('N is too high for this Series (' + str(len(L)) + ' < ' + str(n) + ')')
+    return ser[ser.rolling(11).sum().notna()]
+
+def median(ser):
+    """
+    Compute the median of a pandas Series.
+
+    Keyword Arguments
+    ser -- a pandas Series
+    """
+
+    return pd.median(ser)
 
 def quartiles(L):
     assert len(L) >= 3, 'Quartiles are meaningless with less than 3 data points'
@@ -90,27 +89,37 @@ def quartiles(L):
 
 
 # Functions that check whether items satisfy a condition and return a bool
-def volumeFilter(item, saleslastmonth):
-    if len(item['Sales from last month']) >= saleslastmonth:
-        return True
-    return False
+def volumeFilter(df, min_sales):
+    """
+    Remove sales from last month from DataFrame that are less than
+    min_sales
+    """
+    return df[df['Sales from last month'].shape[0] >= min_sales]
 
-def listingFilter(item, amountoflistings):
-    if len(item['Listings']) >= amountoflistings:
-        return True
-    return False
+def listingFilter(df, min_listings):
+    """
+    Remove listings
+    """
+    return df[df['Listings'].shape[0] >= min_sales]
+
+def removeOutliers(df, key, sigma):
+    """
+    Filter all data points that are greater than sigma away from the
+    mean.
+    """
+    outlier_axis = df[key]
+    mean = outlier_axis.mean()
+    stdev = outlier_axis.std()
+    return df[mean - sigma*stdev < df[key] < mean + sigma*stdev]
 
 
-# Functions that act on an item subgroup and return a filtered list
-def removeOutliers(item, key, sigma):
-    # Filter all data points that are greater than sigma away from the mean
-    outlier_axis = item[key] # eg, listings
-
-    mean = sum(outlier_axis)/len(outlier_axis)
-    stdev = (sum([(x-mean)**2 for x in outlier_axis])/len(outlier_axis))**0.5
-
-    item[key] = [x for x in outlier_axis if mean-sigma*stdev < x < mean+sigma*stdev]
-    return item
+# TODO
+def historicalDateFilter(df, num_days):
+    for row in df:
+        return
+    filter_date = df['Date'] - timedelta(days=num_days)
+    historical = df['Sales from last month']
+    return df[[df['Sales from last month']]]
 
 def historicalDateFilter(item, ndays):
     try:
@@ -126,6 +135,7 @@ def historicalDateFilter(item, ndays):
     return item
 
 def profiler(dataset):
+    # TODO
     # to be built later; used to mine frequency data from the items that satisfy a filter
     pass
 
@@ -141,10 +151,12 @@ def head(dataset,n): # Similar to *nix "head -n 3 /etc/datafile"
 
 class SimpleListingProfit:
     def __init__(self, percentage):
-        self.percentage = percentage # Steam % cut on Marketplace purchases for that game.
-                                     # For CS:GO, this is 15%
-    def run(self, dataset):
+        # Steam % cut on Marketplace purchases for that game.
+        # For CS:GO, this is 15%
+        self.percentage = percentage
+    def run(self, df):
         outputs = []
+        df =
         dataset = [x for x in dataset if listingFilter(x,4)]
         for item in dataset:
             itemdict = dict()

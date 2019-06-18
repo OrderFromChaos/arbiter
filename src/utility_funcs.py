@@ -95,20 +95,20 @@ def DBchange(entries, state, DBfile):
 
 
 
-def read_json(file_name):
+def jsonToDf(file_name):
     return pandas.read_json(file_name, date_unit='ns')
 
-def to_json(df):
-    return pandas.to_json(df)
+def dfToJson(df):
+    return pandas.to_json(df, date_unit='ns')
 
-def read_hdf(file_name, index):
+def hdfToDf(file_name, index):
     return pd.read_hdf(file_name, index)
 
-def to_hdf(df, file_name, index):
+def dfToHdf(df, file_name, index):
     return df.to_hdf(file_name, index)
 
-def pagedata_to_df(file_name):
-    data_set = utility_funcs.import_json_lines(file_name, numlines=11)
+def pagedataToDf(file_name):
+    data_set = utility_funcs.import_json_lines(file_name)
     return pd.json_normalize(data_set)
 
 
