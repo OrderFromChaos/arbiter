@@ -231,7 +231,7 @@ class SpringSearch:
 
 if __name__ == '__main__':
     print('Doing inital dataset import...')
-    DBdata = import_json_lines('../data/pagedata1.txt', encoding='utf_16')
+    DBdata = import_json_lines('../data/pagedata.txt', encoding='utf_16')
     print('Successful import! Number of entries:', len(DBdata))
     DBdata = [x for x in DBdata if volumeFilter(x, 30)]
     DBdata = [x for x in DBdata if listingFilter(x, 1)]
