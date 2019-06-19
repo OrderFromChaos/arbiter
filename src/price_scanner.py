@@ -36,7 +36,7 @@ springscan = False
 
 
 if __name__ == '__main__':
-    DBdata = pd.read_hdf('../data/item_info.h5', 'item_info')
+    DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
     of_interest = DBdata[DBdata['Sales/Day'] >= 1]
     if springscan:
         of_interest = SpringSearch(1.15).run(of_interest)
@@ -76,7 +76,7 @@ if __name__ == '__main__':
                 # Update pagedata file every 10 items
                 count += 1
                 if (count + 1)%10 == 0:
-                    DBdata.to_hdf('../data/item_info.h5','item_info')
+                    DBdata.to_hdf('../data/item_info.h5', 'csgo', mode='w')
                     print('    [WROTE TO FILE.]')
                     print()
         print('New loop.')

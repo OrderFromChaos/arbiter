@@ -68,7 +68,7 @@ USERNAME        = sys.argv[3] #'datafarmer001'
 PASSWORD        = sys.argv[4] #'u9hqgi3sl9'
 ### }
 
-DBdata = pd.read_hdf('../data/item_info.h5', 'item_info')
+DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
 ignore_names = set(DBdata['Item Name'])
 
 # Assume chromedriver is in /usr/bin or one of the $PATH directories.
@@ -122,7 +122,7 @@ for page_no in range(INITIAL_PAGE, FINAL_PAGE + PAGE_DIRECTION, PAGE_DIRECTION):
     
     # Rewrite file at the end of every page (so every (NAVIGATION_TIME*10) seconds at most)
     # DBchange(obtained_data,'add','../data/pagedata.txt')
-    DBdata.to_hdf('../data/item_info.h5','item_info')
+    DBdata.to_hdf('../data/item_info.h5', 'csgo', mode='w')
     print('    [WROTE TO FILE.]')
 
     print()
