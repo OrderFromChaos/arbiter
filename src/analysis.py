@@ -7,45 +7,51 @@
 ### 1. A source for buying/selling strategies to be slotted into other programs and
 ### 2. When run as itself, the ability to backtest strategies during development.
 
-from utility_funcs import import_json_lines # Importing logged dataset
-from utility_funcs import DBchange          # Writing analysis items
+import pandas as pd                         # Dataset format
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
-import json                                 # Writing and reading logged dataset
 from math import floor, ceil                # Data analysis use in medians
+
+# Print settings
+pd.options.display.width = 0
+pd.set_option('display.max_columns', 7)
+
+def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day']):
+    if printtype == 'head':
+        print(df[keys].head(printval))
+    elif printtype == 'tail':
+        print(df[keys].tail(printval))
+    else:
+        raise Exception('Unsupported print type: ' + printtype)
 
 class Backtester:
     def __init__(self, strategy):
         self.strategy = strategy
-        self.results = []
+        self.satdf = None
+        self.run = False
     def runBacktest(self):
+        # TODO: Update this info; no longer accurate
         # Results should be in the format:
         # [
         # {satisfied: True,    # if filter condition is satisfied
         #  name: ~itemname~,   # so it can be found later
         #  metric1: ~number~,
-        #  ...}, 
+        #  ...},
         #  ...]
         # In other words, a dict of info about each item.
         global DBdata
-        self.results = self.strategy.run(DBdata)
-    def getSatisfied(self):
-        if self.results == dict():
-            self.runBacktest()
-        return [x for x in self.results if x['Satisfied']]
+        self.satdf = self.strategy.run(DBdata)
+        self.run = True
 
-def basicTest(strategy, inputs=None, printsat=True):
+def basicTest(strategy, inputs=None):
     if inputs:
         backtest = Backtester(strategy(*inputs))
     else:
         backtest = Backtester(strategy)
     backtest.runBacktest()
-    all_results = backtest.results
-    positive_results = backtest.getSatisfied()
-    print('Number that satisfy', strategy.__name__ + ':', len(positive_results))
-    if printsat:
-        for satdict in positive_results:
-            print(satdict)
-    return all_results, positive_results
+    satdf = backtest.satdf
+    printkeys = backtest.strategy.printkeys
+    print('Number that satisfy', strategy.__name__ + ':', len(satdf.index))
+    return satdf, printkeys
 
 ### HELPER FUNCTIONS ###
 
@@ -86,53 +92,46 @@ def quartiles(L):
     elif isinstance(midpoint, float):
         Q1, Q1pos = median(L[:ceil(midpoint)])
         Q3, Q3pos = median(L[ceil(midpoint):])
-    return (Q1,Q2,Q3), (Q1pos, midpoint, Q3pos)
+    return (Q1,Q2,Q3)
 
-
-# Functions that check whether items satisfy a condition and return a bool
-def volumeFilter(item, saleslastmonth):
-    if len(item['Sales from last month']) >= saleslastmonth:
-        return True
-    return False
-
-def listingFilter(item, amountoflistings):
-    if len(item['Listings']) >= amountoflistings:
-        return True
-    return False
-
+def quartileHistorical(histL):
+    return quartiles([x[1] for x in histL])
 
 # Functions that act on an item subgroup and return a filtered list
-def removeOutliers(item, key, sigma):
+def volumeFilter(df, saleslastmonth):
+    return df[df['Sales from last month'].apply(len) >= saleslastmonth]
+
+def listingFilter(df, amountoflistings):
+    return df[df['Listings'].apply(len) >= amountoflistings]
+
+def souvenirFilter(df):
+    return df[df['Special Type'] != 'Souvenir']
+
+def standardFilter(df):
+    df = volumeFilter(df, 30)
+    df = souvenirFilter(df)
+    return df
+
+def historicalDateFilter(df, ndays):
+    filter_date = datetime.now() - timedelta(days=ndays)
+    for i, row in df.iterrows():
+        historical = row['Sales from last month']
+        df.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
+    return df
+
+def removeHistoricalOutliers(df, sigma):
     # Filter all data points that are greater than sigma away from the mean
-    outlier_axis = item[key] # eg, listings
-
-    mean = sum(outlier_axis)/len(outlier_axis)
-    stdev = (sum([(x-mean)**2 for x in outlier_axis])/len(outlier_axis))**0.5
-
-    item[key] = [x for x in outlier_axis if mean-sigma*stdev < x < mean+sigma*stdev]
-    return item
-
-def historicalDateFilter(item, ndays):
-    try:
-        filter_date = item['Date'] - timedelta(days=ndays)
-    except TypeError:
-        raise Exception('item[\'Date\'] is a string! See here:' + str(repr(item['Date'])) + '\n' +
-                        str(item))
-    historical = item['Sales from last month']
-    if isinstance(historical[0],list): # Fed in as standard [[datetime, price],...] format
-        item['Sales from last month'] = [x for x in historical if x[0] >= filter_date]
-    else:
-        raise Exception('Unrecognized instance! ' + str(historical[0]))
-    return item
+    for i, row in DBdata.iterrows():
+        historical = row['Sales from last month']
+        historical_nums = [x[1] for x in historical]
+        mean = sum(historical_nums)/len(historical_nums)
+        stdev = (sum([(x-mean)**2 for x in historical_nums])/len(historical_nums))**0.5
+        DBdata.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
+    return DBdata
 
 def profiler(dataset):
-    # to be built later; used to mine frequency data from the items that satisfy a filter
+    # TODO: to be built later; used to mine frequency data from a group of items
     pass
-
-# Functions that work on a dataset
-def head(dataset,n): # Similar to *nix "head -n 3 /etc/datafile"
-    for i in dataset[:n]:
-        print(i)
 
 ########################
 
@@ -143,123 +142,117 @@ class SimpleListingProfit:
     def __init__(self, percentage):
         self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
                                      # For CS:GO, this is 15%
-    def run(self, dataset):
-        outputs = []
-        dataset = [x for x in dataset if listingFilter(x,4)]
-        for item in dataset:
-            itemdict = dict()
-            listings = item['Listings']
-            relevant_listings = sorted(listings[:2])
-            ratio = relevant_listings[1]/relevant_listings[0]
+        self.printkeys = ['Item Name', 'Date', 'Buy Rate', 'Sales/Day', 'Ratio'] # For filterPrint
+    
+    def run(self, df):
+        # Actual strategy
+        satdf = standardFilter(df)
+        satdf = listingFilter(df,4) # For very low listings, SLP is essentially meaningless 
 
-            itemdict['Satisfied'] = (ratio > self.percentage and
-                                     item['Special Type'] != 'Souvenir')
-            itemdict['Name'] = item['Item Name']
-            itemdict['Price'] = relevant_listings[0]
-            itemdict['Ratio'] = round(ratio,2)
+        def listingRatio(L):
+            L = sorted(L)
+            return L[1]/L[0]
+        details = pd.DataFrame(data={'Ratio': satdf['Listings'].apply(listingRatio)})
+        satdf = satdf.join(details)
+        satdf = satdf[satdf['Ratio'] > self.percentage + .01] # 1% margin is reasonable
+        satdf['Ratio'] = satdf['Ratio'].apply(lambda x: round(x,2))
 
-            outputs.append(itemdict)
-        return outputs
+        return satdf
 
 class LessThanThirdQuartileHistorical:
-    def run(dataset):
-        outputs = []
-        for item in dataset:
-            itemdict = LessThanThirdQuartileHistorical.runindividual(item)
-            outputs.append(itemdict)
-        return outputs
-    def runindividual(item):
-        # Assume already volume filtered (>30 sales last month recommended)
-        itemdict = dict()
-        item = historicalDateFilter(item,15)
-        historical = [x[1] for x in item['Sales from last month']]
+    def __init__(self, percentage):
+        self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
+                                     # For CS:GO, this is 15%
+        self.printkeys = ['Item Name', 'Date', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio']
+    
+    def run(self, df):
+        satdf = standardFilter(df)
+        satdf = historicalDateFilter(satdf, 15)
+        satdf = volumeFilter(satdf, 3)
 
-        quarts, _ = quartiles(historical)
-        Q1, Q2, Q3 = quarts
+        details = satdf['Sales from last month'].apply(quartileHistorical)
+        details = pd.DataFrame(details.tolist(), index=details.index, columns=['Q1','Q2','Q3'])
+        satdf = satdf.join(details)
 
-        itemdict['Satisfied'] = (item['Listings'][0]*1.16 < Q3
-                                 and item['Listings'][0] < Q1
-                                 and item['Special Type'] != 'Souvenir')
-        itemdict['Name'] = item['Item Name']
-        itemdict['Quartiles'] = tuple(map(lambda x: round(x,2), (Q1,Q2,Q3)))
-        itemdict['Lowest Listing'] = item['Listings'][0]
-        itemdict['Days To Profit'] = round(1/(item['Sales/Day']/4),2)
-        # ^^ x/4 because 1/4th chance to appear at or above Q3
-        itemdict['Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
-        itemdict['Profit/Day'] = round(itemdict['Profit']*item['Sales/Day']/4,2)
+        lowest_listings = pd.DataFrame(data={'Lowest Listing': satdf['Listings'].apply(lambda L: L[0])})
+        satdf = satdf.join(lowest_listings)
+        satdf = satdf[satdf['Lowest Listing'] < satdf['Q1']]
+        satdf = satdf[satdf['Lowest Listing']*(self.percentage + .01) < satdf['Q3']]
 
-        return itemdict
+        details = pd.DataFrame(satdf['Q3']/satdf['Lowest Listing'], columns=['Ratio'])
+        satdf = satdf.join(details)
+        satdf['Ratio'] = satdf['Ratio'].apply(lambda x: round(x,2))
+
+        return satdf
+
+    # TODO: Implement days to profit into models
+    #     itemdict['Days To Profit'] = round(1/(item['Sales/Day']/4),2)
+    #     # ^^ x/4 because 1/4th chance to appear at or above Q3
+    #     itemdict['Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
+    #     itemdict['Profit/Day'] = round(itemdict['Profit']*item['Sales/Day']/4,2)
+
+    #     return itemdict
 
 class SpringSearch:
-    # Items whose historical data Q1 and Q3 differ by more than 15%
-    def run(dataset):
-        outputs = []
-        for item in dataset:
-            itemdict = SpringSearch.runIndividual(item)
-            outputs.append(itemdict)
-        return outputs
-    def runIndividual(item):
-        # Assume historical has >= 3 sales
-        itemdict = dict()
-        cutoff_ratio = 1.15
-        item = historicalDateFilter(item,15)
+    # Items whose historical data Q1 and Q3 differ by more than a given percentage
+    def __init__(self, percentage):
+        self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
+                                     # For CS:GO, this is 15%
+        self.printkeys = ['Item Name', 'Date', 'Buy Rate', 'Sales/Day', 'Ratio']
+    
+    def run(self, df):
+        satdf = standardFilter(df)
+        satdf = historicalDateFilter(satdf, 15)
+        satdf = volumeFilter(satdf, 3)
 
-        historical = [x[1] for x in item['Sales from last month']]
-        quarts, _ = quartiles(historical)
-        Q1, Q2, Q3 = quarts
+        details = satdf['Sales from last month'].apply(quartileHistorical)
+        details = pd.DataFrame(details.tolist(), index=details.index, columns=['Q1','Q2','Q3'])
+        satdf = satdf.join(details)
 
-        itemdict['Satisfied'] = (item['Special Type'] != 'Souvenir'
-                                # Souvenirs aren't very predictable imo
-                                    and Q3/cutoff_ratio > item['Buy Rate']
-                                    # If buy rate is higher than profit pt., no chance of profit
-                                    and Q1*cutoff_ratio < Q3 
-                                    # Actual profit filter
-                                    and quarts[0] <= 144.77
-                                    # Account balance is limited
-                                )
-        itemdict['Name'] = item['Item Name']
-        itemdict['Quartiles'] = tuple(map(lambda x: round(x,2), quarts))
-        itemdict['Days/Profit'] = round(1/(item['Sales/Day']/8),2)
-        # ^^ x/8 because 1/4th chance to appear at or below Q1, 1/4th at or above Q3
-        itemdict['Ratio'] = round(Q3/Q1,2)
-        itemdict['Profit'] = round((itemdict['Ratio']-1.15)*Q1,2) # Buy at Q1, sell at Q3
-        itemdict['Profit/Day'] = round(itemdict['Profit']*item['Sales/Day']/8,2)
+        satdf = satdf[satdf['Q1']*(self.percentage) < satdf['Q3']]
+        satdf = satdf[satdf['Q1'] > satdf['Buy Rate']]
 
-        return itemdict
+        details = pd.DataFrame(satdf['Q3']/satdf['Q1'], columns=['Ratio'])
+        satdf = satdf.join(details)
+        satdf['Ratio'] = satdf['Ratio'].apply(lambda x: round(x,2))
+        # satdf = satdf[satdf['Q1'].apply(lambda q: q < 144.77)] # Account balance restriction
+        return satdf
 
 #######################
 
 if __name__ == '__main__':
     print('Doing inital dataset import...')
-    DBdata = import_json_lines('../data/pagedata.txt', encoding='utf_16')
-    print('Successful import! Number of entries:', len(DBdata))
-    DBdata = [x for x in DBdata if volumeFilter(x, 30)]
-    DBdata = [x for x in DBdata if listingFilter(x, 1)]
-    print('Number that satisfy volume and listing filter:', len(DBdata))
+    DBdata = pd.read_hdf('../data/item_info.h5', 'item_info')
+    print('Successful import! Number of entries:', len(DBdata.index))
+    DBdata = volumeFilter(DBdata, 30)
+    DBdata = listingFilter(DBdata, 1)
+    DBdata = souvenirFilter(DBdata) # I don't understand the pricing on these items.
+    print('Number that satisfy volume, listing, and souvenir filters:', len(DBdata.index))
     print()
 
     # Testing SimpleListingProfit
-    SLPresults, SLPsatresults = basicTest(SimpleListingProfit,inputs=[1.15], printsat=False)
-    SLPsatresults = sorted(SLPsatresults, key = lambda x: x['Ratio'], reverse=True)
-    head(SLPsatresults,10)
+    SLPsat, printkeys = basicTest(SimpleListingProfit,inputs=[1.15])
+    SLPsat = SLPsat.sort_values('Ratio', ascending=False)
+    filterPrint(SLPsat, keys=printkeys)
     print()
 
     # Testing LessThanThirdQuartileHistorical
-    LTTQHresults, LTTQHsatresults = basicTest(LessThanThirdQuartileHistorical, printsat=False)
-    LTTQHsatresults = sorted(LTTQHsatresults, key = lambda x: x['Profit/Day'], reverse=True)
-    head(LTTQHsatresults,10)
-    DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
-             'add',
-             '../data/LTTQHitems.txt')
+    LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.15])
+    LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
+    filterPrint(LTTQHsat, keys=printkeys)
+    # TODO: Implement writing to file
+    # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
+    #          'add',
+    #          '../data/LTTQHitems.txt')
     print()
 
     # Testing SpringSearch
-    SSresults, SSsatresults = basicTest(SpringSearch, printsat=False)
-    SSsatresults = sorted(SSsatresults, key = lambda x: x['Profit/Day'], reverse=True)
-    head(SSsatresults,10)
+    SSsat, printkeys = basicTest(SpringSearch, inputs=[1.15])
+    SSsat = SSsat.sort_values('Ratio', ascending=False)
+    filterPrint(SSsat, keys=printkeys)
     print()
 
-    print('Average daily profit at perfect information/liquidity:', round(sum([x['Profit/Day'] for x in SSsatresults]),2))
-
-    portfolio_size = 100
-    # print('Highest profit at',portfolio_size)
+    # TODO: Implement profit guesses
+    # print('Average daily profit at perfect information/liquidity:', round(sum([x['Profit/Day'] for x in SSsatresults]),2))
+    # portfolio_size = 100
+    # # print('Highest profit at',portfolio_size)

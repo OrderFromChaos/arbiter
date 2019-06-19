@@ -26,8 +26,9 @@ def cleanListing(html):
 
     # The following line filters out any items which say 'Sold!', which is a dynamic updating
     # thing that sometimes happens during data pull.
+    # It also sorts listings; sometimes Steam displays them out of order.
     # list(zip(*n)) does [(a1,b1),...] -> [[a1, a2, ...], [b1, b2, ...]]
-    prices, ids = list(zip(*[(readUSD(x),y) for x,y in zip(prices, ids) if x != 'Sold!']))
+    prices, ids = list(zip(*sorted([(readUSD(x),y) for x,y in zip(prices, ids) if x != 'Sold!'], key = lambda x: x[0])))
     return prices, ids
 
 def cleanVolumetric(data):
@@ -67,7 +68,6 @@ class WaitUntil():
 def browseItempage(browser, item, firstscan=False):
     # Input: Browser currently on item page, item obj
     # Output: Browser still on item page, pagedata dict (scraped info)
-    ### TODO: Should not take an item input for page_gatherer.py
     find_css = browser.find_element_by_css_selector
     haslistings = True
 
