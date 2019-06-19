@@ -163,7 +163,7 @@ class LessThanThirdQuartileHistorical:
     def __init__(self, percentage):
         self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
                                      # For CS:GO, this is 15%
-        self.printkeys = ['Item Name', 'Date', 'Sales/Day', 'Lowest Listing', 'Q1', 'Ratio']
+        self.printkeys = ['Item Name', 'Date', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio']
     
     def run(self, df):
         satdf = standardFilter(df)
