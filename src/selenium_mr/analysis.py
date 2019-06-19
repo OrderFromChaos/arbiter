@@ -5,7 +5,7 @@
 ### PURPOSE:
 ### This program serves two purposes:
 ### 1. A source for buying/selling strategies to be slotted into other programs and
-### 2. When run as itself, the ability to backtest strategies during development.
+### 2. When run as itself, the ability to test and backtest strategies during development.
 
 import pandas as pd                         # Dataset format
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
@@ -23,33 +23,42 @@ def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'B
     else:
         raise Exception('Unsupported print type: ' + printtype)
 
-class Backtester:
+class BackTester:
+    # This looks at historical data to see if a particular strategy would have worked.
+    # Assumptions: 
+    #    1. Ignore market updates based on your price listings.
+    #    2. Perfect information; you can always buy and sell at the right time.
+    # Inputs:
+    #    Historical days to test the buying algorithm process over: [start, end]
+    #        if integers, X days in past
+    #        if datetime, specific dates
+    # Outputs:
+    #    Inventory bought and sold
+    #    Profit at specific day stops, with force sell
+    def __init__(self, strategy, days):
+        self.strategy = strategy
+        self.results = []
+    def runBacktest(self):
+        global DBdata
+        results = self.strategy.runBacktest(DBdata, days)
+
+class CurrTester:
     def __init__(self, strategy):
         self.strategy = strategy
         self.satdf = None
-        self.run = False
-    def runBacktest(self):
-        # TODO: Update this info; no longer accurate
-        # Results should be in the format:
-        # [
-        # {satisfied: True,    # if filter condition is satisfied
-        #  name: ~itemname~,   # so it can be found later
-        #  metric1: ~number~,
-        #  ...},
-        #  ...]
-        # In other words, a dict of info about each item.
+    def runCurrtest(self):
+        # Calls the strategy's "run" function to get the dataframe that satisfies the strategy
         global DBdata
         self.satdf = self.strategy.run(DBdata)
-        self.run = True
 
 def basicTest(strategy, inputs=None):
     if inputs:
-        backtest = Backtester(strategy(*inputs))
+        currtest = CurrTester(strategy(*inputs))
     else:
-        backtest = Backtester(strategy)
-    backtest.runBacktest()
-    satdf = backtest.satdf
-    printkeys = backtest.strategy.printkeys
+        currtest = CurrTester(strategy)
+    currtest.runCurrtest()
+    satdf = currtest.satdf
+    printkeys = currtest.strategy.printkeys
     print('Number that satisfy', strategy.__name__ + ':', len(satdf.index))
     return satdf, printkeys
 
@@ -112,6 +121,19 @@ def standardFilter(df):
     df = souvenirFilter(df)
     return df
 
+def historicalSelector(L, dateregion, now):
+    # TODO: Select specific regions of historical data
+    for date in dateregion:
+        if isinstance(date, int):
+            pass
+    
+    for sale in L:
+        pass
+
+
+def historicalSelectorDF(df, dateregion):
+    pass
+
 def historicalDateFilter(df, ndays):
     filter_date = datetime.now() - timedelta(days=ndays)
     for i, row in df.iterrows():
@@ -128,6 +150,10 @@ def removeHistoricalOutliers(df, sigma):
         stdev = (sum([(x-mean)**2 for x in historical_nums])/len(historical_nums))**0.5
         DBdata.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
     return DBdata
+
+
+
+
 
 def profiler(dataset):
     # TODO: to be built later; used to mine frequency data from a group of items
@@ -222,7 +248,7 @@ class SpringSearch:
 
 if __name__ == '__main__':
     print('Doing inital dataset import...')
-    DBdata = pd.read_hdf('../data/item_info.h5', 'item_info')
+    DBdata = pd.read_hdf('../../data/item_info.h5', 'item_info')
     print('Successful import! Number of entries:', len(DBdata.index))
     DBdata = volumeFilter(DBdata, 30)
     DBdata = listingFilter(DBdata, 1)
@@ -243,7 +269,7 @@ if __name__ == '__main__':
     # TODO: Implement writing to file
     # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
     #          'add',
-    #          '../data/LTTQHitems.txt')
+    #          '../../data/LTTQHitems.txt')
     print()
 
     # Testing SpringSearch

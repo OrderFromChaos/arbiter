@@ -5,10 +5,10 @@ import datetime
 pd.options.display.width = 0
 pd.set_option('display.max_columns', 6)
 
-with h5py.File('../data/item_info.h5','r') as f:
+with h5py.File('../../data/item_info.h5','r') as f:
     print(list(f.keys()))
 
-df = pd.read_hdf('../data/item_info.h5', 'item_info')
+df = pd.read_hdf('../../data/item_info.h5', 'item_info')
 
 # newitem = {
 #     "Item Name": "\u2605 Karambit | Blue Steel (Factory New)",
@@ -25,7 +25,7 @@ df = pd.read_hdf('../data/item_info.h5', 'item_info')
 
 print(len(df.index))
 
-df.to_hdf('../data/item_info.h5', 'csgo', mode='w')
+df.to_hdf('../../data/item_info.h5', 'csgo', mode='w')
 
 # print(df.dtypes)
 # print(df[['Item Name','Condition','Sales/Day','Buy Rate']].tail(2))
