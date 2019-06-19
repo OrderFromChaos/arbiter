@@ -13,7 +13,7 @@ from math import floor, ceil                # Data analysis use in medians
 
 # Print settings
 pd.options.display.width = 0
-pd.set_option('display.max_columns', 6)
+pd.set_option('display.max_columns', 7)
 
 def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day']):
     if printtype == 'head':
@@ -49,8 +49,9 @@ def basicTest(strategy, inputs=None):
         backtest = Backtester(strategy)
     backtest.runBacktest()
     satdf = backtest.satdf
+    printkeys = backtest.strategy.printkeys
     print('Number that satisfy', strategy.__name__ + ':', len(satdf.index))
-    return satdf
+    return satdf, printkeys
 
 ### HELPER FUNCTIONS ###
 
@@ -106,12 +107,17 @@ def listingFilter(df, amountoflistings):
 def souvenirFilter(df):
     return df[df['Special Type'] != 'Souvenir']
 
-def historicalDateFilter(item, ndays):
+def standardFilter(df):
+    df = volumeFilter(df, 30)
+    df = souvenirFilter(df)
+    return df
+
+def historicalDateFilter(df, ndays):
     filter_date = datetime.now() - timedelta(days=ndays)
-    for i, row in DBdata.iterrows():
+    for i, row in df.iterrows():
         historical = row['Sales from last month']
-        DBdata.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
-    return DBdata
+        df.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
+    return df
 
 def removeHistoricalOutliers(df, sigma):
     # Filter all data points that are greater than sigma away from the mean
@@ -136,9 +142,13 @@ class SimpleListingProfit:
     def __init__(self, percentage):
         self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
                                      # For CS:GO, this is 15%
+        self.printkeys = ['Item Name', 'Date', 'Buy Rate', 'Sales/Day', 'Ratio'] # For filterPrint
+    
     def run(self, df):
         # Actual strategy
+        satdf = standardFilter(df)
         satdf = listingFilter(df,4) # For very low listings, SLP is essentially meaningless 
+
         def listingRatio(L):
             L = sorted(L)
             return L[1]/L[0]
@@ -153,9 +163,13 @@ class LessThanThirdQuartileHistorical:
     def __init__(self, percentage):
         self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
                                      # For CS:GO, this is 15%
+        self.printkeys = ['Item Name', 'Date', 'Sales/Day', 'Lowest Listing', 'Q1', 'Ratio']
     
     def run(self, df):
-        satdf = historicalDateFilter(df, 15)
+        satdf = standardFilter(df)
+        satdf = historicalDateFilter(satdf, 15)
+        satdf = volumeFilter(satdf, 3)
+
         details = satdf['Sales from last month'].apply(quartileHistorical)
         details = pd.DataFrame(details.tolist(), index=details.index, columns=['Q1','Q2','Q3'])
         satdf = satdf.join(details)
@@ -164,6 +178,11 @@ class LessThanThirdQuartileHistorical:
         satdf = satdf.join(lowest_listings)
         satdf = satdf[satdf['Lowest Listing'] < satdf['Q1']]
         satdf = satdf[satdf['Lowest Listing']*(self.percentage + .01) < satdf['Q3']]
+
+        details = pd.DataFrame(satdf['Q3']/satdf['Lowest Listing'], columns=['Ratio'])
+        satdf = satdf.join(details)
+        satdf['Ratio'] = satdf['Ratio'].apply(lambda x: round(x,2))
+
         return satdf
 
     # TODO: Implement days to profit into models
@@ -179,15 +198,24 @@ class SpringSearch:
     def __init__(self, percentage):
         self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
                                      # For CS:GO, this is 15%
+        self.printkeys = ['Item Name', 'Date', 'Buy Rate', 'Sales/Day', 'Ratio']
     
     def run(self, df):
-        satdf = historicalDateFilter(df, 15)
+        satdf = standardFilter(df)
+        satdf = historicalDateFilter(satdf, 15)
+        satdf = volumeFilter(satdf, 3)
+
         details = satdf['Sales from last month'].apply(quartileHistorical)
         details = pd.DataFrame(details.tolist(), index=details.index, columns=['Q1','Q2','Q3'])
         satdf = satdf.join(details)
+
         satdf = satdf[satdf['Q1']*(self.percentage) < satdf['Q3']]
         satdf = satdf[satdf['Q1'] > satdf['Buy Rate']]
-        satdf = satdf[satdf['Q1'].apply(lambda q: q < 144.77)] # Account balance restriction
+
+        details = pd.DataFrame(satdf['Q3']/satdf['Q1'], columns=['Ratio'])
+        satdf = satdf.join(details)
+        satdf['Ratio'] = satdf['Ratio'].apply(lambda x: round(x,2))
+        # satdf = satdf[satdf['Q1'].apply(lambda q: q < 144.77)] # Account balance restriction
         return satdf
 
 #######################
@@ -203,23 +231,25 @@ if __name__ == '__main__':
     print()
 
     # Testing SimpleListingProfit
-    SLPsat = basicTest(SimpleListingProfit,inputs=[1.15])
-    SLPsat = SLPsat.sort_values('Ratio', axis=0, ascending=False)
-    filterPrint(SLPsat, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day', 'Ratio'])
+    SLPsat, printkeys = basicTest(SimpleListingProfit,inputs=[1.15])
+    SLPsat = SLPsat.sort_values('Ratio', ascending=False)
+    filterPrint(SLPsat, keys=printkeys)
     print()
 
     # Testing LessThanThirdQuartileHistorical
-    LTTQHsat = basicTest(LessThanThirdQuartileHistorical, inputs=[1.15])
-    filterPrint(LTTQHsat, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day', 'Lowest Listing', 'Q1'])
+    LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.15])
+    LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
+    filterPrint(LTTQHsat, keys=printkeys)
     # TODO: Implement writing to file
     # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
     #          'add',
     #          '../data/LTTQHitems.txt')
     print()
 
-    # # Testing SpringSearch
-    SSsat = basicTest(SpringSearch, inputs=[1.15])
-    filterPrint(SSsat, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day'])
+    # Testing SpringSearch
+    SSsat, printkeys = basicTest(SpringSearch, inputs=[1.15])
+    SSsat = SSsat.sort_values('Ratio', ascending=False)
+    filterPrint(SSsat, keys=printkeys)
     print()
 
     # TODO: Implement profit guesses

@@ -18,6 +18,8 @@ import time                                 # Waiting so no server-side ban
 ### Local Functions
 from analysis import LessThanThirdQuartileHistorical 
                                             # Notify of buy-worthy things while running
+from analysis import SpringSearch           # Filter by items with highest LTTQH promise
+from analysis import filterPrint            # Pretty printing by info in dict
 from browse_itempage import browseItempage  # Scrapes data from Steam item pages
 from browse_itempage import WaitUntil       # Implements standard page waits in with block
 from browse_itempage import steamLogin      # Make code more readable
@@ -27,16 +29,18 @@ from browse_itempage import steamLogin      # Make code more readable
 navigation_time = 2 # Global wait time between page loads
 username = 'datafarmer001'
 password = 'u9hqgi3sl9'
-startloc = 0 # Item in database to start price scanning from
 nloops = 12
-verbose = False # Print data about each item when scanned
+verbose = True # Print data about each item when scanned
+springscan = False
 ### }
 
 
 if __name__ == '__main__':
     DBdata = pd.read_hdf('../data/item_info.h5', 'item_info')
     of_interest = DBdata[DBdata['Sales/Day'] >= 1]
-    of_interest = of_interest.iloc[startloc:,:]
+    if springscan:
+        of_interest = SpringSearch(1.15).run(of_interest)
+        print('Filtered to', len(of_interest.index), 'SpringSearch satisfying items')
 
     browser = webdriver.Chrome() # Linux
     browser = steamLogin(browser, username, password, navigation_time)
@@ -52,16 +56,17 @@ if __name__ == '__main__':
                 browser, pagedata = browseItempage(browser, item)
 
                 # Itemno preserves the original DBdata index!
-                DBdata.iloc[itemno,:] = pd.Series(pagedata)
+                newentry = pd.Series(pagedata)
+                DBdata.iloc[itemno,:] = newentry
 
                 if pagedata['Listings']: # Nonempty
-                    satcheck = LessThanThirdQuartileHistorical.runindividual(pagedata)
-                    ### TODO: Once vks is done with analysis, convert this over.
-                    ###       Should function as is for now.
-                    if satcheck['Satisfied']:
+                    # df = pd.DataFrame(columns=[])
+                    model = LessThanThirdQuartileHistorical(1.15)
+                    printkeys = model.printkeys
+                    satdf = model.run(pd.DataFrame([newentry]))
+                    if len(satdf.index) > 0:
                         print('!!!!', 'Found a Q3 satisfying item')
-                        print(satcheck)
-                        ### TODO: Fix satisfying item writing for pandas
+                        filterPrint(satdf, keys=printkeys)
                     if verbose:
                         print('    ' + str(itemno+1) + '.', item['Item Name'], pagedata['Listings'][0], pagedata["Sales/Day"])
                 else:
@@ -73,4 +78,5 @@ if __name__ == '__main__':
                 if (count + 1)%10 == 0:
                     DBdata.to_hdf('../data/item_info.h5','item_info')
                     print('    [WROTE TO FILE.]')
+                    print()
         print('New loop.')
