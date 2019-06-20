@@ -250,9 +250,7 @@ if __name__ == '__main__':
     print('Doing inital dataset import...')
     DBdata = pd.read_hdf('../../data/item_info.h5', 'item_info')
     print('Successful import! Number of entries:', len(DBdata.index))
-    DBdata = volumeFilter(DBdata, 30)
-    DBdata = listingFilter(DBdata, 1)
-    DBdata = souvenirFilter(DBdata) # I don't understand the pricing on these items.
+    DBdata = standardFilter(DBdata)
     print('Number that satisfy volume, listing, and souvenir filters:', len(DBdata.index))
     print()
 
