@@ -10,6 +10,7 @@
 import pandas as pd                         # Dataset format
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 from math import floor, ceil                # Data analysis use in medians
+from copy import deepcopy                   # Needed for some reference passing
 
 # Print settings
 pd.options.display.width = 0
@@ -48,7 +49,7 @@ class BackTester:
     # 
     # Ideally, this can later be thrown into a profit-maximizing optimization algorithm,
     #     so we can use the "best" strategy according to backtesting.
-    def __init__(self, strategy, testregion, liquidation_force_days, capturing_ratio):
+    def __init__(self, strategy, testregion, liquidation_force_days, capturing_ratio, inputs=None):
         # "strategy" is a class with an implemented .runBacktest() function which returns
         #     profit, overall cashflow to achieve profit, max portfolio holding, 
         #     and buy/sell history
@@ -62,18 +63,36 @@ class BackTester:
         #     start on capturing_ratio based on it excluding the highest 1/7 sales.
         #     Note that reducing liquidation_force_days does decrease the portfolio use, but also
         #     decreases profit potential (on average), assuming item prices stay generally constant.
+        # "inputs" is for inputs to the functions, like 1.15x pricing
         self.strategy = strategy
         self.testregion = testregion
         self.liquidation_force_days = liquidation_force_days
         self.capturing_ratio = capturing_ratio
+        self.inputs = inputs
+
         self.purchases = []
     def runBacktest(self):
         global DBdata
-        test_samples = historicalSelectorDF(DBdata, self.testregion)
-        self.purchases = self.strategy.runBacktest(DBdata, test_samples, self.testregion)
+        # This is where you have to use deepcopies
+        sacrificial_testregion = deepcopy(self.testregion)
+        sacrificial_DBdata = deepcopy(DBdata)
+        test_samples = historicalSelectorDF(sacrificial_DBdata, sacrificial_testregion)
+        
+        self.strategy = self.strategy(1.15)
+        print('Generating purchases over testregion...')
+        if self.inputs:
+            self.purchases = self.strategy.runBacktest(DBdata, test_samples, 
+                                                       self.testregion, self.inputs)
+        else:
+            self.purchases = self.strategy.runBacktest(DBdata, test_samples, 
+                                                       self.testregion)
         # Now take these purchases and carry out liquidation sells
         # Note that if you hold eg. 5 of an item, you permanently remove one of the possible sell
         #     maxes, so you have to sell for a lower price
+        print('Number of purchases:', len(self.purchases.index))
+        print('Starting liquidation sell process...')
+        
+        return self.purchases
 
 class CurrTester:
     def __init__(self, strategy):
@@ -158,7 +177,7 @@ def dayFloorDate(date):
     return datetime(date.year, date.month, date.day)
 
 def historicalSelector(L, dateregion=[7,0]):
-    # Note that L is a series
+    # Note that L is a list
     for index, date in enumerate(dateregion):
         if isinstance(date, int):
             rightmost_date = L[-1][0]
@@ -239,7 +258,7 @@ class LessThanThirdQuartileHistorical:
         return satdf
 
     def run(self, df):
-        satdf = prepare(df)
+        satdf = self.prepare(df)
 
         lowest_listings = pd.DataFrame(data={'Lowest Listing': satdf['Listings'].apply(lambda L: L[0])})
         satdf = satdf.join(lowest_listings)
@@ -250,23 +269,22 @@ class LessThanThirdQuartileHistorical:
         satdf = satdf.join(details)
         satdf['Ratio'] = satdf['Ratio'].apply(lambda x: round(x,2))
 
+        # TODO: Implement days to profit into models
+        #     itemdict['Days To Profit'] = round(1/(item['Sales/Day']/4),2)
+        #     # ^^ x/4 because 1/4th chance to appear at or above Q3
+        #     itemdict['Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
+        #     itemdict['Profit/Day'] = round(itemdict['Profit']*item['Sales/Day']/4,2)
+        #     return itemdict
         return satdf
 
-    # TODO: Implement days to profit into models
-    #     itemdict['Days To Profit'] = round(1/(item['Sales/Day']/4),2)
-    #     # ^^ x/4 because 1/4th chance to appear at or above Q3
-    #     itemdict['Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
-    #     itemdict['Profit/Day'] = round(itemdict['Profit']*item['Sales/Day']/4,2)
-    #     return itemdict
-
-    def runBacktest(self, df, test_samples, test_region):
+    def runBacktest(self, df, test_samples, test_region, inputs):
         # 'test_samples' is a dataframe where everything in 'Sales from last month' are buy prices 
         #     to check for that item
         # 'test_region' tells you were to measure quartiles from
-        ndays = 7
-
-        satdf = prepare(df, [test_region[0] - ndays, test_region[0]])
-        purchases = pd.DataFrame(columns=['Name', 'Date', 'Buy Price'])
+        
+        ndays = inputs[0]
+        satdf = self.prepare(df, dateregion=[test_region[0] + ndays, test_region[0]])
+        purchases = pd.DataFrame(columns=['Name', 'Date', 'Buy Price', 'Q1', 'Q3'])
 
         # Algorithm, in short:
         # for each item in df
@@ -275,9 +293,9 @@ class LessThanThirdQuartileHistorical:
         # return buy list
 
         for index, historical_row in satdf.iterrows():
-            test_row = test_region.iloc[index]
+            test_row = test_samples.loc[index]
             good_to_buy = test_row['Sales from last month']
-            good_to_buy = [x for x in good_to_buy if x[1] < historical_row['Q1']]
+            good_to_buy = [x for x in good_to_buy if x[1] < historical_row['Q3']/1.15]
             for purchase in good_to_buy:
                 p = pd.Series(data={'Name': historical_row['Item Name'],
                                     'Date': purchase[0],
@@ -324,29 +342,33 @@ if __name__ == '__main__':
     print('Number that satisfy volume, listing, and souvenir filters:', len(DBdata.index))
     print()
 
-    # Testing SimpleListingProfit
-    SLPsat, printkeys = basicTest(SimpleListingProfit,inputs=[1.15])
-    SLPsat = SLPsat.sort_values('Ratio', ascending=False)
-    filterPrint(SLPsat, keys=printkeys)
-    print()
+    # # Testing SimpleListingProfit
+    # SLPsat, printkeys = basicTest(SimpleListingProfit,inputs=[1.15])
+    # SLPsat = SLPsat.sort_values('Ratio', ascending=False)
+    # filterPrint(SLPsat, keys=printkeys)
+    # print()
 
-    # Testing LessThanThirdQuartileHistorical
-    LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.15])
-    LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
-    filterPrint(LTTQHsat, keys=printkeys)
-    # TODO: Implement writing to file
-    # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
-    #          'add',
-    #          '../../data/LTTQHitems.txt')
-    print()
+    # # Testing LessThanThirdQuartileHistorical
+    # LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.15])
+    # LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
+    # filterPrint(LTTQHsat, keys=printkeys)
+    # # TODO: Implement writing to file
+    # # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
+    # #          'add',
+    # #          '../../data/LTTQHitems.txt')
+    # print()
 
-    # Testing SpringSearch
-    SSsat, printkeys = basicTest(SpringSearch, inputs=[1.15])
-    SSsat = SSsat.sort_values('Ratio', ascending=False)
-    filterPrint(SSsat, keys=printkeys)
-    print()
+    # # Testing SpringSearch
+    # SSsat, printkeys = basicTest(SpringSearch, inputs=[1.15])
+    # SSsat = SSsat.sort_values('Ratio', ascending=False)
+    # filterPrint(SSsat, keys=printkeys)
+    # print()
 
     # TODO: Implement profit guesses
     # print('Average daily profit at perfect information/liquidity:', round(sum([x['Profit/Day'] for x in SSsatresults]),2))
     # portfolio_size = 100
     # # print('Highest profit at',portfolio_size)
+
+    tester = BackTester(LessThanThirdQuartileHistorical, [5,4], 3, .85, [7])
+    purchases = tester.runBacktest()
+    print(purchases)
