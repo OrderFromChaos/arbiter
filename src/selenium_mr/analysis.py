@@ -26,8 +26,8 @@ def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'B
 class BackTester:
     # This looks at historical data to see if a particular strategy would have worked.
     # Assumptions: 
-    #    1. Ignore market updates based on your price listings.
-    #    2. Perfect information; you can always buy and sell at the right time.
+    #    1. Ignore market updates based on your price listings. This is imperfect
+    #       (you're part of the market), but I have no idea how to account for this.
     # Inputs:
     #    Strategy to use. It will scan over (say) a day and buy any satisfied items.
     #    Historical days to test the buying algorithm process over: [start, end]
@@ -42,19 +42,38 @@ class BackTester:
     #        [IMPLEMENTATION: Might be useful to use numpy.quantiles]
     # Outputs:
     #    Profit
-    #    Max portfolio price
-    #    
+    #    Overall cashflow to achieve profit
+    #    Max portfolio holding (max resources to get this profit?)
+    #    Buy/sell history
+    # 
     # Ideally, this can later be thrown into a profit-maximizing optimization algorithm,
     #     so we can use the "best" strategy according to backtesting.
     def __init__(self, strategy, testregion, liquidation_force_days, capturing_ratio):
+        # "strategy" is a class with an implemented .runBacktest() function which returns
+        #     profit, overall cashflow to achieve profit, max portfolio holding, 
+        #     and buy/sell history
+        # "testregion" is a two-len list with [startdate, enddate]. These dates can be a mix of
+        #     integers (floor(today) - X days ago, where X is the int) or datetime objects.
+        # "liquidation_force_days" and "capturing_ratio" tells the algorithm how to liquidate buys;
+        #     it will select liquidation_force_days after the buy and pick the highest value after
+        #     getting everything less than the capturing_ratio quantile (eg .95, so everything
+        #     except the top 5% of sales). Picking these is a bit of an art, and might be worthwhile
+        #     to TODO update based on number of sales in question. 0.85 seems like a good place to
+        #     start on capturing_ratio based on it excluding the highest 1/7 sales.
+        #     Note that reducing liquidation_force_days does decrease the portfolio use, but also
+        #     decreases profit potential (on average), assuming item prices stay generally constant.
         self.strategy = strategy
         self.testregion = testregion
         self.liquidation_force_days = liquidation_force_days
         self.capturing_ratio = capturing_ratio
-        self.results = []
+        self.purchases = []
     def runBacktest(self):
         global DBdata
-        results = self.strategy.runBacktest(DBdata, days)
+        test_samples = historicalSelectorDF(DBdata, self.testregion)
+        self.purchases = self.strategy.runBacktest(DBdata, test_samples, self.testregion)
+        # Now take these purchases and carry out liquidation sells
+        # Note that if you hold eg. 5 of an item, you permanently remove one of the possible sell
+        #     maxes, so you have to sell for a lower price
 
 class CurrTester:
     def __init__(self, strategy):
@@ -135,13 +154,16 @@ def standardFilter(df):
     df = souvenirFilter(df)
     return df
 
+def dayFloorDate(date):
+    return datetime(date.year, date.month, date.day)
+
 def historicalSelector(L, dateregion=[7,0]):
     # Note that L is a series
     for index, date in enumerate(dateregion):
         if isinstance(date, int):
-            now = datetime.now()
-            nowfloor = datetime(now.year, now.month, now.day) # Floor current day
-            dateregion[index] = nowfloor - timedelta(days=date)
+            rightmost_date = L[-1][0]
+            rightfloor = dayFloorDate(rightmost_date)
+            dateregion[index] = rightfloor - timedelta(days=date)
         elif isinstance(date, datetime):
             pass
         else:
@@ -158,10 +180,6 @@ def historicalSelectorDF(df, dateregion):
 
 def historicalDateFilter(df, ndays):
     df = historicalSelectorDF(df, [ndays, 0])
-    # filter_date = datetime.now() - timedelta(days=ndays)
-    # for i, row in df.iterrows():
-    #     historical = row['Sales from last month']
-    #     df.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
     return df
 
 def removeHistoricalOutliers(df, sigma):
@@ -210,14 +228,18 @@ class LessThanThirdQuartileHistorical:
                                      # For CS:GO, this is 15%
         self.printkeys = ['Item Name', 'Date', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio']
     
-    def run(self, df):
+    def prepare(self, df, dateregion=[15,0]):
         satdf = standardFilter(df)
-        satdf = historicalDateFilter(satdf, 15)
+        satdf = historicalSelectorDF(satdf, dateregion)
         satdf = volumeFilter(satdf, 3)
 
         details = satdf['Sales from last month'].apply(quartileHistorical)
         details = pd.DataFrame(details.tolist(), index=details.index, columns=['Q1','Q2','Q3'])
         satdf = satdf.join(details)
+        return satdf
+
+    def run(self, df):
+        satdf = prepare(df)
 
         lowest_listings = pd.DataFrame(data={'Lowest Listing': satdf['Listings'].apply(lambda L: L[0])})
         satdf = satdf.join(lowest_listings)
@@ -235,8 +257,36 @@ class LessThanThirdQuartileHistorical:
     #     # ^^ x/4 because 1/4th chance to appear at or above Q3
     #     itemdict['Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
     #     itemdict['Profit/Day'] = round(itemdict['Profit']*item['Sales/Day']/4,2)
-
     #     return itemdict
+
+    def runBacktest(self, df, test_samples, test_region):
+        # 'test_samples' is a dataframe where everything in 'Sales from last month' are buy prices 
+        #     to check for that item
+        # 'test_region' tells you were to measure quartiles from
+        ndays = 7
+
+        satdf = prepare(df, [test_region[0] - ndays, test_region[0]])
+        purchases = pd.DataFrame(columns=['Name', 'Date', 'Buy Price'])
+
+        # Algorithm, in short:
+        # for each item in df
+        #     check each item in test_samples
+        #     if satisfied, log as buy
+        # return buy list
+
+        for index, historical_row in satdf.iterrows():
+            test_row = test_region.iloc[index]
+            good_to_buy = test_row['Sales from last month']
+            good_to_buy = [x for x in good_to_buy if x[1] < historical_row['Q1']]
+            for purchase in good_to_buy:
+                p = pd.Series(data={'Name': historical_row['Item Name'],
+                                    'Date': purchase[0],
+                                    'Buy Price': purchase[1],
+                                    'Q1': historical_row['Q1'],
+                                    'Q3': historical_row['Q3']})
+                purchases = purchases.append([p], ignore_index=True)
+
+        return purchases
 
 class SpringSearch:
     # Items whose historical data Q1 and Q3 differ by more than a given percentage
