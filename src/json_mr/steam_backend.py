@@ -1,24 +1,7 @@
-# from lxml import html
-# import requests
 from selenium import webdriver
 import pandas as pd
 import time
 import json
-
-# Questions to answer:
-# 2. Build a flow diagram for arbitrage methods
-
-# with open('../../data/backend.txt','r') as f:
-#     data = json.load(f)
-
-# item = data['results']
-# item = sorted(item, key=lambda x: x['sell_price'], reverse=True)
-
-# for i in item[:10]:
-#     print(i['name'], round(i['sell_price']/100,2))
-
-# print(data.keys())
-# print(type(item))
 
 allquery = 'https://steamcommunity.com/market/search/render/?category_730_ItemSet&appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory0&count=100&start='
 history_query = 'https://steamcommunity.com/market/pricehistory/?country=US&currency=3&appid=440&market_hash_name=Specialized%20Killstreak%20Brass%20Beast'

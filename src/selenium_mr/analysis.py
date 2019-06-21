@@ -29,14 +29,28 @@ class BackTester:
     #    1. Ignore market updates based on your price listings.
     #    2. Perfect information; you can always buy and sell at the right time.
     # Inputs:
+    #    Strategy to use. It will scan over (say) a day and buy any satisfied items.
     #    Historical days to test the buying algorithm process over: [start, end]
+    #    ie "testing region"
     #        if integers, X days in past
     #        if datetime, specific dates
+    #    Sell time - how many days to hold. 
+    #        TODO: Allow for dynamic sell region in the future. LTTQH usually has a variable
+    #              expected sell date.
+    #    Sell capturing ability - how well you can sell. This is in quartiles, so .95 means you
+    #        do not have access to the top 5% of sale prices (maybe these were irrational consumers)
+    #        [IMPLEMENTATION: Might be useful to use numpy.quantiles]
     # Outputs:
-    #    Inventory bought and sold
-    #    Profit at specific day stops, with force sell
-    def __init__(self, strategy, days):
+    #    Profit
+    #    Max portfolio price
+    #    
+    # Ideally, this can later be thrown into a profit-maximizing optimization algorithm,
+    #     so we can use the "best" strategy according to backtesting.
+    def __init__(self, strategy, testregion, liquidation_force_days, capturing_ratio):
         self.strategy = strategy
+        self.testregion = testregion
+        self.liquidation_force_days = liquidation_force_days
+        self.capturing_ratio = capturing_ratio
         self.results = []
     def runBacktest(self):
         global DBdata
@@ -121,24 +135,33 @@ def standardFilter(df):
     df = souvenirFilter(df)
     return df
 
-def historicalSelector(L, dateregion, now):
-    # TODO: Select specific regions of historical data
-    for date in dateregion:
+def historicalSelector(L, dateregion=[7,0]):
+    # Note that L is a series
+    for index, date in enumerate(dateregion):
         if isinstance(date, int):
+            now = datetime.now()
+            nowfloor = datetime(now.year, now.month, now.day) # Floor current day
+            dateregion[index] = nowfloor - timedelta(days=date)
+        elif isinstance(date, datetime):
             pass
-    
-    for sale in L:
-        pass
+        else:
+            raise Exception('Unsupported type! Must be int or datetime. Your type: ' + 
+                            str(type(date)))
 
+    L = [saleinfo for saleinfo in L if dateregion[0] <= saleinfo[0] <= dateregion[1]]
+    return L
 
 def historicalSelectorDF(df, dateregion):
-    pass
+    df['Sales from last month'] = df['Sales from last month'].apply(historicalSelector, 
+                                                                    dateregion=dateregion)
+    return df
 
 def historicalDateFilter(df, ndays):
-    filter_date = datetime.now() - timedelta(days=ndays)
-    for i, row in df.iterrows():
-        historical = row['Sales from last month']
-        df.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
+    df = historicalSelectorDF(df, [ndays, 0])
+    # filter_date = datetime.now() - timedelta(days=ndays)
+    # for i, row in df.iterrows():
+    #     historical = row['Sales from last month']
+    #     df.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
     return df
 
 def removeHistoricalOutliers(df, sigma):
@@ -150,10 +173,6 @@ def removeHistoricalOutliers(df, sigma):
         stdev = (sum([(x-mean)**2 for x in historical_nums])/len(historical_nums))**0.5
         DBdata.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
     return DBdata
-
-
-
-
 
 def profiler(dataset):
     # TODO: to be built later; used to mine frequency data from a group of items
@@ -221,14 +240,15 @@ class LessThanThirdQuartileHistorical:
 
 class SpringSearch:
     # Items whose historical data Q1 and Q3 differ by more than a given percentage
-    def __init__(self, percentage):
+    def __init__(self, percentage, numdays=15):
         self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
                                      # For CS:GO, this is 15%
+        self.numdays = numdays
         self.printkeys = ['Item Name', 'Date', 'Buy Rate', 'Sales/Day', 'Ratio']
     
     def run(self, df):
         satdf = standardFilter(df)
-        satdf = historicalDateFilter(satdf, 15)
+        satdf = historicalDateFilter(satdf, self.numdays)
         satdf = volumeFilter(satdf, 3)
 
         details = satdf['Sales from last month'].apply(quartileHistorical)
@@ -248,7 +268,7 @@ class SpringSearch:
 
 if __name__ == '__main__':
     print('Doing inital dataset import...')
-    DBdata = pd.read_hdf('../../data/item_info.h5', 'item_info')
+    DBdata = pd.read_hdf('../../data/item_info.h5', 'csgo')
     print('Successful import! Number of entries:', len(DBdata.index))
     DBdata = standardFilter(DBdata)
     print('Number that satisfy volume, listing, and souvenir filters:', len(DBdata.index))
