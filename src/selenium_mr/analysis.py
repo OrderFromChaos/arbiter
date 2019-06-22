@@ -31,29 +31,13 @@ def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'B
 
 class BackTester:
     # This looks at historical data to see if a particular strategy would have worked.
-    # Assumptions: 
+    # Assumptions:
     #    1. Ignore market updates based on your price listings. This is imperfect
     #       (you're part of the market), but I have no idea how to account for this.
     #    2. Perfect information on the purchasing, but not selling side.
     #       TODO: Implement buy_ratio as well; some items sell faster than 1 minute.
     #             As much as I'd like to think there's no algo competition, there probably is.
-    # Inputs:
-    #    Strategy to use. It will scan over (say) a day and buy any satisfied items.
-    #    Historical days to test the buying algorithm process over: [start, end]
-    #    ie "testing region"
-    #        if integers, X days in past
-    #        if datetime, specific dates
-    #    Sell time - how many days to hold. 
-    #        TODO: Allow for dynamic sell region in the future. LTTQH usually has a variable
-    #              expected sell date.
-    #    Sell capturing ability - how well you can sell. This is in quartiles, so .95 means you
-    #        do not have access to the top 5% of sale prices (maybe these were irrational consumers)
-    #        [IMPLEMENTATION: Might be useful to use numpy.quantiles]
-    # Outputs:
-    #    Profit
-    #    Overall cashflow to achieve profit
-    #    Max portfolio holding (max resources to get this profit?)
-    #    Buy/sell history
+    #             See how badly this affects profit.
     # 
     # Ideally, this can later be thrown into a profit-maximizing optimization algorithm,
     #     so we can use the "best" strategy according to backtesting.
@@ -108,20 +92,6 @@ class BackTester:
 
         # Purchase output is not pandas since it's nested and too complicated to get any gain from
         # not using dicts
-
-        # algorithm:
-        # for unique_purchase_name: # individual items have common potential sell histories
-        #     firstrun = True
-        #     soldat = []
-        #     for i, p in enumerate(subpurchases):
-        #         if firstrun:
-        #             compute highest quartile (all purchases above this will be filtered now)
-        #             firstrun = False
-        #             sellregion = [date, date + timedelta(days=self.liquidation_force_days)]
-        #         else:
-        #             # add new sellregion space, cut off old stuff
-        #         # find sell
-        #         # remove sell from sellregion
 
         nametoindex = {x['Item Name']: i for i, x in DBdata.iterrows()}
         profits = []
