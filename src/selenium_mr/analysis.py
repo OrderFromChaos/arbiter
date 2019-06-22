@@ -7,6 +7,9 @@
 ### 1. A source for buying/selling strategies to be slotted into other programs and
 ### 2. When run as itself, the ability to test and backtest strategies during development.
 
+# TODO: There are some hardcoded 1.15s for convenience sake while coding; these should be removed
+#       with vars like self.percentage.
+
 import pandas as pd                         # Dataset format
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 from math import floor, ceil                # Data analysis use in medians
@@ -29,6 +32,9 @@ class BackTester:
     # Assumptions: 
     #    1. Ignore market updates based on your price listings. This is imperfect
     #       (you're part of the market), but I have no idea how to account for this.
+    #    2. Perfect information on the purchasing, but not selling side.
+    #       TODO: Implement buy_ratio as well; some items sell faster than 1 minute.
+    #             As much as I'd like to think there's no algo competition, there probably is.
     # Inputs:
     #    Strategy to use. It will scan over (say) a day and buy any satisfied items.
     #    Historical days to test the buying algorithm process over: [start, end]
@@ -49,50 +55,104 @@ class BackTester:
     # 
     # Ideally, this can later be thrown into a profit-maximizing optimization algorithm,
     #     so we can use the "best" strategy according to backtesting.
-    def __init__(self, strategy, testregion, liquidation_force_days, capturing_ratio, inputs=None):
+    def __init__(self, strategy, testregion, liquidation_force_days, sell_ratio, inputs=None):
         # "strategy" is a class with an implemented .runBacktest() function which returns
         #     profit, overall cashflow to achieve profit, max portfolio holding, 
         #     and buy/sell history
         # "testregion" is a two-len list with [startdate, enddate]. These dates can be a mix of
         #     integers (floor(today) - X days ago, where X is the int) or datetime objects.
-        # "liquidation_force_days" and "capturing_ratio" tells the algorithm how to liquidate buys;
+        # "liquidation_force_days" and "sell_ratio" tells the algorithm how to liquidate buys;
         #     it will select liquidation_force_days after the buy and pick the highest value after
-        #     getting everything less than the capturing_ratio quantile (eg .95, so everything
+        #     getting everything less than the sell_ratio quantile (eg .95, so everything
         #     except the top 5% of sales). Picking these is a bit of an art, and might be worthwhile
         #     to TODO update based on number of sales in question. 0.85 seems like a good place to
-        #     start on capturing_ratio based on it excluding the highest 1/7 sales.
+        #     start on sell_ratio based on it excluding the highest 1/7 sales.
         #     Note that reducing liquidation_force_days does decrease the portfolio use, but also
         #     decreases profit potential (on average), assuming item prices stay generally constant.
         # "inputs" is for inputs to the functions, like 1.15x pricing
         self.strategy = strategy
         self.testregion = testregion
         self.liquidation_force_days = liquidation_force_days
-        self.capturing_ratio = capturing_ratio
+        self.sell_ratio = sell_ratio
         self.inputs = inputs
 
         self.purchases = []
     def runBacktest(self):
         global DBdata
-        # This is where you have to use deepcopies
+        # This is where you have to use deepcopies. Both are needed for purchase finding step
         sacrificial_testregion = deepcopy(self.testregion)
-        sacrificial_DBdata = deepcopy(DBdata)
+        sacrificial_DBdata = deepcopy(DBdata) 
         test_samples = historicalSelectorDF(sacrificial_DBdata, sacrificial_testregion)
-        
+
         self.strategy = self.strategy(1.15)
         print('Generating purchases over testregion...')
+        sacrificial_DBdata = deepcopy(DBdata) # This deepcopy to keep it for later liquidation
         if self.inputs:
-            self.purchases = self.strategy.runBacktest(DBdata, test_samples, 
+            self.purchases = self.strategy.runBacktest(sacrificial_DBdata, test_samples, 
                                                        self.testregion, self.inputs)
         else:
-            self.purchases = self.strategy.runBacktest(DBdata, test_samples, 
+            self.purchases = self.strategy.runBacktest(sacrificial_DBdata, test_samples, 
                                                        self.testregion)
         # Now take these purchases and carry out liquidation sells
         # Note that if you hold eg. 5 of an item, you permanently remove one of the possible sell
         #     maxes, so you have to sell for a lower price
-        print('Number of purchases:', len(self.purchases.index))
-        print('Starting liquidation sell process...')
+        # (Unsurprisingly, this greatly increases complexity)
+        print('Number of purchases:', sum([len(x['Purchases']) for x in self.purchases]))
+        print('Running liquidation sell process...')
+
+        # Purchase output is not pandas since it's nested and too complicated to get any gain from
+        # not using dicts
+
+        # algorithm:
+        # for unique_purchase_name: # individual items have common potential sell histories
+        #     firstrun = True
+        #     soldat = []
+        #     for i, p in enumerate(subpurchases):
+        #         if firstrun:
+        #             compute highest quartile (all purchases above this will be filtered now)
+        #             firstrun = False
+        #             sellregion = [date, date + timedelta(days=self.liquidation_force_days)]
+        #         else:
+        #             # add new sellregion space, cut off old stuff
+        #         # find sell
+        #         # remove sell from sellregion
+
+        nametoindex = {x['Item Name']: i for i, x in DBdata.iterrows()}
+        profits = []
+        for unique_name in self.purchases:
+            firstrun = True
+            relevant_history = DBdata.loc[nametoindex[unique_name['Name']]]['Sales from last month']
+
+            for i, p in enumerate(unique_name['Purchases']):
+                if firstrun:
+                    # Initialize the sell region
+                    sellregion = [p['Date'], p['Date'] + timedelta(days=self.liquidation_force_days)]
+                    sellregion = historicalSelector(relevant_history, sellregion)
+                    max_sell = pd.Series(data = [x[1] for x in sellregion]).quantile(self.sell_ratio)
+                else:
+                    # Update the sell region
+                    sellregion = [x for x in sellregion if x > p['Date']] # Remove old left elts.
+                    # Add new right region
+                    # [General idea]:
+                    # If previousend > p['Date'], 
+                    #     append previousend to p['Date'] + self.liquidation_force_days
+                    # else append p['Date'] to p['Date'] + self.liquidation_force_days
+                    previousend = (unique_name['Purchases'][i-1]['Date'] + 
+                                    timedelta(days=self.liquidation_force_days))
+                    if previous_end > p['Date']:
+                        rightaddition = [previousend,
+                                         p['Date'] + timedelta(days=self.liquidation_force_days)]
+                    else:
+                        rightaddition = [p['Date'],
+                                         p['Date'] + timedelta(days=self.liquidation_force_days)]
+                    sellregion += historicalSelector(relevant_history, rightaddition)
+                sellregion = [x for x in sellregion if x[1] <= max_sell]
+                prices_only = [x[1] for x in sellregion]
+                sell_price = max(prices_only)
+                profits.append(sell_price/1.15 - p['Buy Price'])
+                del sellregion[prices_only.index(sell_price)] # Cannot sell twice at the same value
         
-        return self.purchases
+        return (self.purchases, profits)
 
 class CurrTester:
     def __init__(self, strategy):
@@ -284,7 +344,8 @@ class LessThanThirdQuartileHistorical:
         
         ndays = inputs[0]
         satdf = self.prepare(df, dateregion=[test_region[0] + ndays, test_region[0]])
-        purchases = pd.DataFrame(columns=['Name', 'Date', 'Buy Price', 'Q1', 'Q3'])
+        # purchases = pd.DataFrame(columns=['Name', 'Date', 'Sales/Day', 'Buy Price', 'Q1', 'Q3'])
+        purchases = []
 
         # Algorithm, in short:
         # for each item in df
@@ -295,14 +356,19 @@ class LessThanThirdQuartileHistorical:
         for index, historical_row in satdf.iterrows():
             test_row = test_samples.loc[index]
             good_to_buy = test_row['Sales from last month']
-            good_to_buy = [x for x in good_to_buy if x[1] < historical_row['Q3']/1.15]
+            good_to_buy = [x for x in good_to_buy if x[1] < historical_row['Q3']/(self.percentage + .01)
+                                                  and x[1] < historical_row['Q1']]
+            item_dict = {'Name': historical_row['Item Name'],
+                         'Sales/Day': historical_row['Sales/Day'],
+                         'Q1': historical_row['Q1'],
+                         'Q3': historical_row['Q3'],
+                         'Purchases': []}
             for purchase in good_to_buy:
-                p = pd.Series(data={'Name': historical_row['Item Name'],
-                                    'Date': purchase[0],
-                                    'Buy Price': purchase[1],
-                                    'Q1': historical_row['Q1'],
-                                    'Q3': historical_row['Q3']})
-                purchases = purchases.append([p], ignore_index=True)
+                p = {'Date': purchase[0],
+                    'Buy Price': purchase[1]}
+                item_dict['Purchases'].append(p)
+            if item_dict['Purchases']:
+                purchases.append(item_dict)
 
         return purchases
 
@@ -369,6 +435,12 @@ if __name__ == '__main__':
     # portfolio_size = 100
     # # print('Highest profit at',portfolio_size)
 
-    tester = BackTester(LessThanThirdQuartileHistorical, [5,4], 3, .85, [7])
-    purchases = tester.runBacktest()
-    print(purchases)
+    tester = BackTester(LessThanThirdQuartileHistorical, [5,4], 4, .85, [7])
+    purchases, profits = tester.runBacktest()
+    # for item in purchases[:10]:
+    #     print(item)
+    
+    print('Net profit:', round(sum(profits), 2))
+    print('Total loss:', round(sum([x for x in profits if x < 0]), 2))
+    print('Total gain:', round(sum([x for x in profits if x > 0]), 2))
+    print('Average net profit per item:', round(sum(profits) / sum([len(x['Purchases']) for x in purchases]), 2))
