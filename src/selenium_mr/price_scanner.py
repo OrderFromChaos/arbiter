@@ -57,7 +57,7 @@ if __name__ == '__main__':
 
                 # Itemno preserves the original DBdata index!
                 newentry = pd.Series(pagedata)
-                DBdata.iloc[itemno,:] = newentry
+                DBdata.loc[itemno] = newentry
 
                 if pagedata['Listings']: # Nonempty
                     model = LessThanThirdQuartileHistorical(1.15)
