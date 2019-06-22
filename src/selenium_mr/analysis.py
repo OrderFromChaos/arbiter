@@ -11,6 +11,8 @@
 #       with vars like self.percentage.
 
 import pandas as pd                         # Dataset format
+import matplotlib.pyplot as plt             # Graphing backtest outputs
+import scipy.optimize                       # Finding highest profit strategy
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 from math import floor, ceil                # Data analysis use in medians
 from copy import deepcopy                   # Needed for some reference passing
@@ -77,15 +79,18 @@ class BackTester:
         self.inputs = inputs
 
         self.purchases = []
-    def runBacktest(self):
+    def runBacktest(self, verbose=True):
         global DBdata
         # This is where you have to use deepcopies. Both are needed for purchase finding step
+        if verbose:
+            print('Backtesting [{0}]...'.format(self.strategy.__name__))
         sacrificial_testregion = deepcopy(self.testregion)
         sacrificial_DBdata = deepcopy(DBdata) 
         test_samples = historicalSelectorDF(sacrificial_DBdata, sacrificial_testregion)
 
         self.strategy = self.strategy(1.15)
-        print('Generating purchases over testregion...')
+        if verbose:
+            print('Generating purchases over testregion...')
         sacrificial_DBdata = deepcopy(DBdata) # This deepcopy to keep it for later liquidation
         if self.inputs:
             self.purchases = self.strategy.runBacktest(sacrificial_DBdata, test_samples, 
@@ -97,8 +102,9 @@ class BackTester:
         # Note that if you hold eg. 5 of an item, you permanently remove one of the possible sell
         #     maxes, so you have to sell for a lower price
         # (Unsurprisingly, this greatly increases complexity)
-        print('Number of purchases:', sum([len(x['Purchases']) for x in self.purchases]))
-        print('Running liquidation sell process...')
+        if verbose:
+            print('Number of purchases:', sum([len(x['Purchases']) for x in self.purchases]))
+            print('Running liquidation sell process...')
 
         # Purchase output is not pandas since it's nested and too complicated to get any gain from
         # not using dicts
@@ -151,7 +157,7 @@ class BackTester:
                 sell_price = max(prices_only)
                 profits.append(sell_price/1.15 - p['Buy Price'])
                 del sellregion[prices_only.index(sell_price)] # Cannot sell twice at the same value
-        
+
         return (self.purchases, profits)
 
 class CurrTester:
@@ -406,7 +412,7 @@ if __name__ == '__main__':
     print('Successful import! Number of entries:', len(DBdata.index))
     DBdata = standardFilter(DBdata)
     print('Number that satisfy volume, listing, and souvenir filters:', len(DBdata.index))
-    print()
+    # print()
 
     # # Testing SimpleListingProfit
     # SLPsat, printkeys = basicTest(SimpleListingProfit,inputs=[1.15])
@@ -435,12 +441,44 @@ if __name__ == '__main__':
     # portfolio_size = 100
     # # print('Highest profit at',portfolio_size)
 
-    tester = BackTester(LessThanThirdQuartileHistorical, [5,4], 4, .85, [7])
+    tester = BackTester(LessThanThirdQuartileHistorical, [5,4], 2, .85, [7])
     purchases, profits = tester.runBacktest()
-    # for item in purchases[:10]:
-    #     print(item)
     
-    print('Net profit:', round(sum(profits), 2))
-    print('Total loss:', round(sum([x for x in profits if x < 0]), 2))
-    print('Total gain:', round(sum([x for x in profits if x > 0]), 2))
-    print('Average net profit per item:', round(sum(profits) / sum([len(x['Purchases']) for x in purchases]), 2))
+    def profitAnalysis(profits):
+        net = sum(profits)
+        positive_profits = [x for x in profits if x > 0]
+        negative_profits = [x for x in profits if x < 0]
+        num_recommendations = sum([len(x['Purchases']) for x in purchases])
+        cashflow = sum([sum([y['Buy Price'] for y in x['Purchases']]) for x in purchases])
+        print('Net profit:', round(net, 2))
+        print('Total loss:', round(sum(negative_profits), 2), '(From ' + str(len(negative_profits)) + ' recommendations)')
+        print('Total gain:', round(sum(positive_profits), 2), '(From ' + str(len(positive_profits)) + ' recommendations)')
+        print('Average net profit per item:', round(net / num_recommendations), 2)
+        print('Total $$$ flow:', round(cashflow, 2))
+        print('Cashflow per $ profit:', round(cashflow / net, 2))
+
+    profitAnalysis(profits)
+
+    print('Testing for optimal strategy on given timescale...')
+
+    day_x = []
+    day_y = []
+    for dayregion in range(5,11):
+        print('Testing {0}-{1} days ago...'.format(dayregion, dayregion-1))
+        ndays_list = []
+        net_profits = []
+        for lookback in range(1,16):
+            ndays_list.append(lookback)
+            _, profits = BackTester(LessThanThirdQuartileHistorical, 
+                                    [dayregion,dayregion-1], 4, .85, [lookback]).runBacktest(verbose=False)
+            net_profits.append(sum(profits))
+        day_x.append(ndays_list)
+        day_y.append(net_profits)
+    
+    plt.xlabel('LTTQH lookback days')
+    plt.ylabel('Net $$$ profit')
+    for i, x in enumerate(day_x):
+        if i != 2:
+            plt.plot(x, day_y[i], label='Jun ' + str(16-i))
+    plt.legend(loc='upper left')
+    plt.show()
