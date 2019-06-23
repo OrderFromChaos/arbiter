@@ -9,32 +9,41 @@
 
 import pandas as pd                         # Dataset format
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
-from math import floor, ceil                # Data analysis use in medians
+from math import floor, ceil                # Data analysis use in median
+from sklearn.model_selection import train_test_split
+from sklearn.linear_mode import LinearRegression
 
 # Print settings
 pd.options.display.width = 0
 pd.set_option('display.max_columns', 7)
 
-def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day']):
-    if printtype == 'head':
-        print(df[keys].head(printval))
-    elif printtype == 'tail':
-        print(df[keys].tail(printval))
+def filterPrint(df, print_type='head', print_val=10,
+                keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day']):
+    if print_type == 'head':
+        print(df[keys].head(print_val))
+    elif print_type == 'tail':
+        print(df[keys].tail(print_val))
     else:
-        raise Exception('Unsupported print type: ' + printtype)
+        raise Exception('Unsupported print type: ' + print_type)
 
 class BackTester:
-    # This looks at historical data to see if a particular strategy would have worked.
-    # Assumptions: 
-    #    1. Ignore market updates based on your price listings.
-    #    2. Perfect information; you can always buy and sell at the right time.
-    # Inputs:
-    #    Historical days to test the buying algorithm process over: [start, end]
-    #        if integers, X days in past
-    #        if datetime, specific dates
-    # Outputs:
-    #    Inventory bought and sold
-    #    Profit at specific day stops, with force sell
+    """
+    This looks at historical data to see if a particular strategy would
+    have worked.
+    Assumptions:
+       1. Ignore market updates based on your price listings.
+       2. Perfect information; you can always buy and sell at the right
+    time.
+    Inputs:
+       Historical days to test the buying algorithm process over:
+    [start, end]
+           if integers, X days in past
+           if datetime, specific dates
+    Outputs:
+       Inventory bought and sold
+       Profit at specific day stops, with force sell
+    """
+
     def __init__(self, strategy, days):
         self.strategy = strategy
         self.results = []
@@ -47,7 +56,10 @@ class CurrTester:
         self.strategy = strategy
         self.satdf = None
     def runCurrtest(self):
-        # Calls the strategy's "run" function to get the dataframe that satisfies the strategy
+        """
+        Call the strategy's "run" function to get the dataframe that
+        satisfies the strategy.
+        """
         global DBdata
         self.satdf = self.strategy.run(DBdata)
 
@@ -68,7 +80,7 @@ def basicTest(strategy, inputs=None):
 def simpleMovingAvg(L, n):
     if len(L) < n:
         return 'N is too high for this list (' + str(len(L)) + ' < ' + str(n) + ')'
-    
+
     avg_list = []
     for i in range(0,len(L)-n):
         avg = sum(L[i:i+n])/n
@@ -107,11 +119,27 @@ def quartileHistorical(histL):
     return quartiles([x[1] for x in histL])
 
 # Functions that act on an item subgroup and return a filtered list
-def volumeFilter(df, saleslastmonth):
-    return df[df['Sales from last month'].apply(len) >= saleslastmonth]
+def volumeFilter(df, min_sales):
+    """
+    Remove rows (items) from a DataFrame whose sales from last month
+    that are less than min_sales.
 
-def listingFilter(df, amountoflistings):
-    return df[df['Listings'].apply(len) >= amountoflistings]
+    Keyword Arguments
+    df -- the DataFrame containing item information
+    min_sales -- the threshold for number of sales
+    """
+    return df[df['Sales from last month'].shape[0] >= min_sales]
+
+def listingFilter(df, min_listings):
+    """
+    Remove rows (items) of a DataFrame whose Listings are below a
+    certain threshold.
+
+    Keyword Arguments
+    df -- the DataFrame containing item information
+    min_listings -- the threshold for number of listings
+    """
+    return df[df['Listings'].shape[0] >= min_sales]
 
 def souvenirFilter(df):
     return df[df['Special Type'] != 'Souvenir']
@@ -126,7 +154,7 @@ def historicalSelector(L, dateregion, now):
     for date in dateregion:
         if isinstance(date, int):
             pass
-    
+
     for sale in L:
         pass
 
@@ -166,14 +194,14 @@ def profiler(dataset):
 
 class SimpleListingProfit:
     def __init__(self, percentage):
-        self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
+        self.percentage = percentage # Steam % cut on Marketplace purchases for that game.
                                      # For CS:GO, this is 15%
         self.printkeys = ['Item Name', 'Date', 'Buy Rate', 'Sales/Day', 'Ratio'] # For filterPrint
-    
+
     def run(self, df):
         # Actual strategy
         satdf = standardFilter(df)
-        satdf = listingFilter(df,4) # For very low listings, SLP is essentially meaningless 
+        satdf = listingFilter(df,4) # For very low listings, SLP is essentially meaningless
 
         def listingRatio(L):
             L = sorted(L)
@@ -187,10 +215,10 @@ class SimpleListingProfit:
 
 class LessThanThirdQuartileHistorical:
     def __init__(self, percentage):
-        self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
+        self.percentage = percentage # Steam % cut on Marketplace purchases for that game.
                                      # For CS:GO, this is 15%
         self.printkeys = ['Item Name', 'Date', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio']
-    
+
     def run(self, df):
         satdf = standardFilter(df)
         satdf = historicalDateFilter(satdf, 15)
@@ -222,10 +250,10 @@ class LessThanThirdQuartileHistorical:
 class SpringSearch:
     # Items whose historical data Q1 and Q3 differ by more than a given percentage
     def __init__(self, percentage):
-        self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
+        self.percentage = percentage # Steam % cut on Marketplace purchases for that game.
                                      # For CS:GO, this is 15%
         self.printkeys = ['Item Name', 'Date', 'Buy Rate', 'Sales/Day', 'Ratio']
-    
+
     def run(self, df):
         satdf = standardFilter(df)
         satdf = historicalDateFilter(satdf, 15)
@@ -245,6 +273,22 @@ class SpringSearch:
         return satdf
 
 #######################
+
+class LinearRegressionModel:
+    def __init__(self, window):
+        self.window = window
+
+    def run(self, price_history):
+        if window >= len(price_history) - 1 or window <= 0:
+            raise ValueError('Window is out of bounds.')
+        X = np.array([price_history[i:i + window] for i in
+                      range(len(price_history) - window)])
+        y = np.array(price_history[len(price_history) - window : len(price_history)])
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=1)
+
+        self.regression_model = LinearRegression()
+        self.regression_model.fit(X_train, y_train)
+        self.coeffs = self.regression_model.coef_[0]
 
 if __name__ == '__main__':
     print('Doing inital dataset import...')
@@ -267,7 +311,7 @@ if __name__ == '__main__':
     LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
     filterPrint(LTTQHsat, keys=printkeys)
     # TODO: Implement writing to file
-    # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
+    # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']],
     #          'add',
     #          '../../data/LTTQHitems.txt')
     print()
