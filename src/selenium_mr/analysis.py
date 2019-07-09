@@ -72,16 +72,12 @@ class BackTester:
         sacrificial_DBdata = deepcopy(DBdata) 
         test_samples = historicalSelectorDF(sacrificial_DBdata, sacrificial_testregion)
 
-        self.strategy = self.strategy(1.15)
+        self.strategy = self.strategy(*self.inputs)
         if verbose:
             print('Generating purchases over testregion...')
         sacrificial_DBdata = deepcopy(DBdata) # This deepcopy to keep it for later liquidation
-        if self.inputs:
-            self.purchases = self.strategy.runBacktest(sacrificial_DBdata, test_samples, 
-                                                       self.testregion, self.inputs)
-        else:
-            self.purchases = self.strategy.runBacktest(sacrificial_DBdata, test_samples, 
-                                                       self.testregion)
+        self.purchases = self.strategy.runBacktest(sacrificial_DBdata, test_samples, self.testregion)
+
         # Now take these purchases and carry out liquidation sells
         # Note that if you hold eg. 5 of an item, you permanently remove one of the possible sell
         #     maxes, so you have to sell for a lower price
@@ -215,7 +211,7 @@ def dayFloorDate(date):
 def historicalSelector(L, dateregion=[7,0]):
     # Note that L is a list
     for index, date in enumerate(dateregion):
-        if isinstance(date, int):
+        if isinstance(date, int) or isinstance(date, float):
             rightmost_date = L[-1][0]
             rightfloor = dayFloorDate(rightmost_date)
             dateregion[index] = rightfloor - timedelta(days=date)
@@ -278,13 +274,18 @@ class SimpleListingProfit:
         return satdf
 
 class LessThanThirdQuartileHistorical:
-    def __init__(self, percentage):
+    def __init__(self, percentage, dateregion):
         self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
                                      # For CS:GO, this is 15%
+        self.dateregion = dateregion
         self.printkeys = ['Item Name', 'Date', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio']
     
-    def prepare(self, df, dateregion=[15,0]):
+    def prepare(self, df, dateregion=None):
+        if not dateregion:
+            dateregion = self.dateregion
+        
         satdf = standardFilter(df)
+        satdf = volumeFilter(satdf, 60) # Make quartiles more meaningful
         satdf = historicalSelectorDF(satdf, dateregion)
         satdf = volumeFilter(satdf, 3)
 
@@ -313,13 +314,12 @@ class LessThanThirdQuartileHistorical:
         #     return itemdict
         return satdf
 
-    def runBacktest(self, df, test_samples, test_region, inputs):
+    def runBacktest(self, df, test_samples, test_region):
         # 'test_samples' is a dataframe where everything in 'Sales from last month' are buy prices 
         #     to check for that item
         # 'test_region' tells you were to measure quartiles from
-        
-        ndays = inputs[0]
-        satdf = self.prepare(df, dateregion=[test_region[0] + ndays, test_region[0]])
+
+        satdf = self.prepare(df, dateregion=[test_region[0] + (self.dateregion[0]-self.dateregion[1]), test_region[0]])
         # purchases = pd.DataFrame(columns=['Name', 'Date', 'Sales/Day', 'Buy Price', 'Q1', 'Q3'])
         purchases = []
 
@@ -350,7 +350,7 @@ class LessThanThirdQuartileHistorical:
 
 class SpringSearch:
     # Items whose historical data Q1 and Q3 differ by more than a given percentage
-    def __init__(self, percentage, numdays=15):
+    def __init__(self, percentage, numdays=2):
         self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
                                      # For CS:GO, this is 15%
         self.numdays = numdays
@@ -358,6 +358,7 @@ class SpringSearch:
     
     def run(self, df):
         satdf = standardFilter(df)
+        satdf = volumeFilter(satdf, 80)
         satdf = historicalDateFilter(satdf, self.numdays)
         satdf = volumeFilter(satdf, 3)
 
@@ -390,8 +391,8 @@ if __name__ == '__main__':
     # filterPrint(SLPsat, keys=printkeys)
     # print()
 
-    # # Testing LessThanThirdQuartileHistorical
-    # LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.15])
+    # Testing LessThanThirdQuartileHistorical
+    # LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.15, [2,0]])
     # LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
     # filterPrint(LTTQHsat, keys=printkeys)
     # # TODO: Implement writing to file
@@ -411,44 +412,51 @@ if __name__ == '__main__':
     # portfolio_size = 100
     # # print('Highest profit at',portfolio_size)
 
-    tester = BackTester(LessThanThirdQuartileHistorical, [5,4], 2, .85, [7])
-    purchases, profits = tester.runBacktest()
+    # tester = BackTester(LessThanThirdQuartileHistorical, [5,4], 2, .85, [7])
+    # purchases, profits = tester.runBacktest()
     
-    def profitAnalysis(profits):
-        net = sum(profits)
-        positive_profits = [x for x in profits if x > 0]
-        negative_profits = [x for x in profits if x < 0]
-        num_recommendations = sum([len(x['Purchases']) for x in purchases])
-        cashflow = sum([sum([y['Buy Price'] for y in x['Purchases']]) for x in purchases])
-        print('Net profit:', round(net, 2))
-        print('Total loss:', round(sum(negative_profits), 2), '(From ' + str(len(negative_profits)) + ' recommendations)')
-        print('Total gain:', round(sum(positive_profits), 2), '(From ' + str(len(positive_profits)) + ' recommendations)')
-        print('Average net profit per item:', round(net / num_recommendations), 2)
-        print('Total $$$ flow:', round(cashflow, 2))
-        print('Cashflow per $ profit:', round(cashflow / net, 2))
+    # def profitAnalysis(profits):
+    #     net = sum(profits)
+    #     positive_profits = [x for x in profits if x > 0]
+    #     negative_profits = [x for x in profits if x < 0]
+    #     num_recommendations = sum([len(x['Purchases']) for x in purchases])
+    #     cashflow = sum([sum([y['Buy Price'] for y in x['Purchases']]) for x in purchases])
+    #     print('Net profit:', round(net, 2))
+    #     print('Total loss:', round(sum(negative_profits), 2), '(From ' + str(len(negative_profits)) + ' recommendations)')
+    #     print('Total gain:', round(sum(positive_profits), 2), '(From ' + str(len(positive_profits)) + ' recommendations)')
+    #     print('Average net profit per item:', round(net / num_recommendations, 2))
+    #     print('Total $$$ flow:', round(cashflow, 2))
+    #     print('Cashflow per $ profit:', round(cashflow / net, 2))
 
-    profitAnalysis(profits)
+    # profitAnalysis(profits)
 
-    print('Testing for optimal strategy on given timescale...')
+    # print('Testing for optimal strategy on given timescale...')
 
-    day_x = []
-    day_y = []
-    for dayregion in range(5,11):
-        print('Testing {0}-{1} days ago...'.format(dayregion, dayregion-1))
-        ndays_list = []
-        net_profits = []
-        for lookback in range(1,16):
-            ndays_list.append(lookback)
-            _, profits = BackTester(LessThanThirdQuartileHistorical, 
-                                    [dayregion,dayregion-1], 4, .85, [lookback]).runBacktest(verbose=False)
-            net_profits.append(sum(profits))
-        day_x.append(ndays_list)
-        day_y.append(net_profits)
+    # day_x = []
+    # day_y = []
+    # for dayregion in range(11,26):
+    #     print('Testing {0}-{1} days ago...'.format(dayregion, dayregion-1))
+    #     ndays_list = []
+    #     net_profits = []
+    #     for days_sell in range(1,11):
+    #         ndays_list.append(days_sell)
+    #         _, profits = BackTester(LessThanThirdQuartileHistorical,
+    #                                 [dayregion,dayregion-1], days_sell, .85, [2]).runBacktest(verbose=False)
+    #         net_profits.append(sum(profits))
+    #     day_x.append(ndays_list)
+    #     day_y.append(net_profits)
     
-    plt.xlabel('LTTQH lookback days')
-    plt.ylabel('Net $$$ profit')
-    for i, x in enumerate(day_x):
-        if i != 2:
-            plt.plot(x, day_y[i], label='Jun ' + str(16-i))
-    plt.legend(loc='upper left')
-    plt.show()
+    # # # Figure out highest profit day model
+    # # perdayprofit = [0]*len(day_y[0])
+    # # for x in day_y:
+    # #     highest_profit = max(x)
+    # #     for i, day in enumerate(x):
+    # #         perdayprofit[i] += day/highest_profit
+    # # print(perdayprofit)
+
+    # plt.xlabel('Force_liquidation_sell parameter value (days)')
+    # plt.ylabel('Net $$$ profit')
+    # for i, x in enumerate(day_x):
+    #     plt.plot(x, day_y[i], label='Jun ' + str(16-i))
+    # plt.legend(loc='upper left')
+    # plt.show()

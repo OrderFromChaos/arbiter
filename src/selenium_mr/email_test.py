@@ -10,7 +10,7 @@ Best,
 Yourself""")
 
 
-sender_email = "dunno@"
+sender_email = "dunno@yes.com"
 receiver_email = "csgomarketrequests@gmail.com"
 
 port = 465

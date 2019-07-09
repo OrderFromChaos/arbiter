@@ -65,7 +65,7 @@ class WaitUntil():
         if elapsed < self.lengthwait:
             time.sleep(self.lengthwait-elapsed)
 
-def browseItempage(browser, item, firstscan=False):
+def browseItempage(browser, item, navigation_time, firstscan=False):
     # Input: Browser currently on item page, item obj
     # Output: Browser still on item page, pagedata dict (scraped info)
     find_css = browser.find_element_by_css_selector
