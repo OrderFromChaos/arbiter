@@ -24,12 +24,12 @@ from selenium_mr.browse_itempage import steamLogin
 
 ### Hyperparameters {
 selenium_loadtime = 2 # Selenium page loadtime
-json_loadtime = 4     # Json page loadtime
+json_loadtime = 3     # Json page loadtime
                       # We only need to make 16 requests for CSGO factory new, 
                       # so we don't currently hit the server-side minute cap (>=20 req/min), 
                       # but it does seem to ban lower than this speed.
 identity = 'Syris'
-verbose = True        # Print data about each item when scanned
+verbose = False       # Print data about each item when scanned
 # Pattern: list of dicts (each of which represent steps) to be cycled over
 #     [MANDATORY] step 'Method' is assumed to be a function in the current global namespace
 #     The rest are optional inputs specific to that method function
@@ -38,16 +38,15 @@ verbose = True        # Print data about each item when scanned
 pattern = [
     {
         'Method': 'selenium_search',
-        'Pages': 20,
+        'Pages': 30,
         'Load Time': selenium_loadtime,
-        'Verbose': verbose,
-        'Identity': identity
+        'Verbose': verbose
+    },
+    {
+        'Method': 'json_search',
+        'Load Time': json_loadtime,
+        'Verbose': verbose
     }
-    # {
-    #     'Method': 'json_search',
-    #     'Load Time': json_loadtime,
-    #     'Identity': identity
-    # }
 ]
 ### }
 

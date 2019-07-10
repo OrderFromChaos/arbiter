@@ -142,7 +142,7 @@ def steamLogin(browser, username, password, navigation_time):
 
     # Since we're using a verified account, need to have human fill out 2FA
     with WaitUntil(navigation_time):
-        code_confirmation = input('Did you enter your Steam confirmation code? [y\\n]')
+        code_confirmation = input('Did you enter your Steam confirmation code? [y\\n] ')
         if code_confirmation not in ['y','Y','yes','Yes','yep']:
             raise Exception('Well why didn\'t you??')
     

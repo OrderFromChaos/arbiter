@@ -13,11 +13,12 @@ import time                                 # Waiting so no server-side ban
 import json                                 # Metadata read/write
 
 ### Local Functions
-from selenium_mr.analysis import LessThanThirdQuartileHistorical 
-                                            # Notify of buy-worthy things while running
+# from selenium_mr.analysis import LessThanThirdQuartileHistorical 
+#                                             # Notify of buy-worthy things while running
 from selenium_mr.analysis import filterPrint            # Pretty printing by info in dict
 from selenium_mr.browse_itempage import browseItempage  # Scrapes data from Steam item pages
 from selenium_mr.browse_itempage import WaitUntil       # Implements standard page waits in with block
+from selenium_mr.analysis import quartileHistorical, standardFilter, historicalDateFilter
 
 ####################################################################################################
 
@@ -30,7 +31,6 @@ def getLoginInfo(identity):
 
 def selenium_search(browser, infodict):
     ### Hyperparameters {
-    identity = 'Syris'
     pages_to_scan = infodict['Pages']
     navigation_time = infodict['Load Time']
     verbose = infodict['Verbose']
@@ -46,9 +46,8 @@ def selenium_search(browser, infodict):
     dflength = len(of_interest.index)
 
     for i in range(pages_to_scan):
-        item = of_interest.iloc[current_iloc+i] ### BIG TODO UH-OH, BUG, ILOC OF_INTEREST != ILOC DBDATA.
-                    # HAVE TO USE GIT TO GET OLD DATABASE COMMIT.
-        DBdata_index = of_interest.index[current_iloc+i]
+        item = of_interest.iloc[current_iloc]
+        DBdata_index = of_interest.index[current_iloc]
         
         browser.get(item['URL'])
         with WaitUntil(navigation_time):
@@ -70,11 +69,15 @@ def selenium_search(browser, infodict):
             else:
                 if verbose:
                     print('    ' + str(DBdata.index[DBdata_index]+1) + '.', item['Item Name'], '[]', pagedata["Sales/Day"])
+            current_iloc += 1
+            if current_iloc > dflength:
+                current_iloc = 0
 
     DBdata.to_hdf('../data/item_info.h5', 'csgo', mode='w')
-    print('    [SELENIUM WROTE TO FILE.]')
+    if verbose:
+        print('    [SELENIUM WROTE TO FILE.]')
     new_combined_data = metadata
-    new_combined_data['current_iloc'] = current_iloc + pages_to_scan
+    new_combined_data['current_iloc'] = current_iloc
     with open('combineddata.json', 'w') as f:
         json.dump(new_combined_data, f, indent=4)
     
@@ -85,57 +88,83 @@ def json_search(browser, infodict):
     ### STEP 1: GATHER DATA ### TODO TODO Check to see that it works with infodict, etc. TODO TODO
     ###########################
 
-    # allquery = 'https://steamcommunity.com/market/search/render/?category_730_ItemSet&appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory0&count=100&start='
+    ### Hyperparameters {
+    navigation_time = infodict['Load Time']
+    verbose = infodict['Verbose']
+    with open('combineddata.json','r') as f:
+        metadata = json.load(f)
+    ### }
 
-    # firstrun = True
-    # all_items_reached = False
-    # startloc = 0
-    # results = []
-    # browser = webdriver.Chrome()
-    # find_xpath = browser.find_element_by_xpath
-    # while not all_items_reached:
-    #     # page = requests.get(allquery + str(startloc))
-    #     # text = html.fromstring(page.content).xpath('text()')[0]
-    #     # print(text)
-    #     browser.get(allquery + str(startloc))
-    #     text = find_xpath('//body').text
-    #     # print(text)
-    #     response = json.loads(text)
-    #     # print(response)
-    #     success = response['success']
-    #     if success == True:
-    #         print('Got json at:', startloc)
-    #     else:
-    #         print('Uh oh, pull failure:', success)
-    #         raise Exception
-    #     results += response['results']
+    allquery = ('https://steamcommunity.com/market/search/render/?category_730_ItemSet&'
+                'appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory0&'
+                'count=100&start=')
 
-    #     if firstrun:
-    #         size = response['total_count']
-    #         firstrun = False
-        
-    #     startloc += 100
-    #     if startloc > size:
-    #         break
-    #     time.sleep(4)
+    firstrun = True
+    all_items_reached = False
+    currloc = 0
+    results = []
+    find_xpath = browser.find_element_by_xpath
+    while not all_items_reached:
+        with WaitUntil(navigation_time):
+            # Get json response using selenium (requests seemed to be more prone to breaking)
+            browser.get(allquery + str(currloc))
+            text = find_xpath('//body').text
+            response = json.loads(text)
+            success = response['success']
+            if success == True:
+                if verbose:
+                    print('Got json at:', currloc)
+            else:
+                print('Uh oh, pull failure:', success)
+                raise Exception
+            results += response['results']
 
-    # for i, item in enumerate(results):
-    #     results[i] = {'name': item['name'],
-    #                 'sell_price': item['sell_price'],
-    #                 'sell_listings': item['sell_listings']}
-    # data = pd.DataFrame(results)
+            # If first run, get total number of expected items
+            if firstrun:
+                size = response['total_count']
+                firstrun = False
+            
+            # Loop breaking logic based on expected item count
+            currloc += 100
+            if currloc > size:
+                break
 
-    # data.to_hdf('../../data/global_pricing.h5', 'csgo')
+    for i, item in enumerate(results):
+        results[i] = {'name': item['name'],
+                      'sell_price': item['sell_price'],
+                      'sell_listings': item['sell_listings']}
+    JSONdata = pd.DataFrame(results)
+
+    # For logging; next step uses the 'data' variable
+    JSONdata.to_hdf('../data/global_pricing.h5', 'csgo', mode='w')
 
     ############################################
     ### STEP 2: SEARCH FOR BUY OPPORTUNITIES ###
     ############################################
 
+    # General algorithm:
+    # 1. Get historical dataset
+    # 2. Compute quartiles on historical dataset
+    # 3. If JSON real lowest < Q3*1.15, alert 
+    DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
+    DBdata = DBdata[DBdata['Sales/Day'] >= 1]
 
+    quarts = DBdata['Sales from last month'].apply(quartileHistorical)
+    quarts = pd.DataFrame(quarts.tolist(), index=quarts.index, columns=['Q1','Q2','Q3'])
+    DBdata = DBdata.join(quarts)
+    # filterPrint(DBdata, keys=['Item Name', 'Date', 'Sales/Day', 'Q1', 'Q2', 'Q3'])
 
+    # Construct location lookup dictionary
+    DBdata_index = DBdata['Item Name'].to_dict()
+    DBdata_index = {name: index for index, name in DBdata_index.items()}
 
+    final_results = []
+    for i, item in JSONdata.iterrows():
+        if item['name'] in DBdata_index:
+            DBrow = DBdata.loc[DBdata_index[item['name']]]
+            if item['sell_price']*1.15 < DBrow['Q3']:
+                print('yay', item['Name'], item['sell_price'])
+                print(DBrow)
+                final_results.append(item)
 
-
-
-
-    return (browser, [])
+    return (browser, final_results)
