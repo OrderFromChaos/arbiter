@@ -29,7 +29,7 @@ json_loadtime = 4     # Json page loadtime
                       # so we don't currently hit the server-side minute cap (>=20 req/min), 
                       # but it does seem to ban lower than this speed.
 identity = 'Syris'
-verbose = False       # Print data about each item when scanned
+verbose = True        # Print data about each item when scanned
 # Pattern: list of dicts (each of which represent steps) to be cycled over
 #     [MANDATORY] step 'Method' is assumed to be a function in the current global namespace
 #     The rest are optional inputs specific to that method function
@@ -42,12 +42,12 @@ pattern = [
         'Load Time': selenium_loadtime,
         'Verbose': verbose,
         'Identity': identity
-    },
-    {
-        'Method': 'json_search',
-        'Load Time': json_loadtime,
-        'Identity': identity
     }
+    # {
+    #     'Method': 'json_search',
+    #     'Load Time': json_loadtime,
+    #     'Identity': identity
+    # }
 ]
 ### }
 
