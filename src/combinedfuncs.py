@@ -46,7 +46,9 @@ def selenium_search(browser, infodict):
     dflength = len(of_interest.index)
 
     for i in range(pages_to_scan):
-        item = of_interest.iloc[current_iloc+i]
+        item = of_interest.iloc[current_iloc+i] ### BIG TODO UH-OH, BUG, ILOC OF_INTEREST != ILOC DBDATA.
+                    # HAVE TO USE GIT TO GET OLD DATABASE COMMIT.
+        DBdata_index = of_interest.index[current_iloc+i]
         
         browser.get(item['URL'])
         with WaitUntil(navigation_time):
@@ -54,7 +56,7 @@ def selenium_search(browser, infodict):
             browser, pagedata = browseItempage(browser, item, navigation_time)
 
             newentry = pd.Series(pagedata)
-            DBdata.iloc[current_iloc+i] = newentry
+            DBdata.loc[DBdata_index] = newentry
 
             if pagedata['Listings']: # Nonempty
                 # model = LessThanThirdQuartileHistorical(1.15, [2,0])
@@ -64,10 +66,10 @@ def selenium_search(browser, infodict):
                 #     print('!!!!', 'Found a Q3 satisfying item')
                 #     filterPrint(satdf, keys=printkeys)
                 if verbose:
-                    print('    ' + str(DBdata.index[current_iloc+i]+1) + '.', item['Item Name'], pagedata['Listings'][0], pagedata["Sales/Day"])
+                    print('    ' + str(DBdata.index[DBdata_index]+1) + '.', item['Item Name'], pagedata['Listings'][0], pagedata["Sales/Day"])
             else:
                 if verbose:
-                    print('    ' + str(DBdata.index[current_iloc+i]+1) + '.', item['Item Name'], '[]', pagedata["Sales/Day"])
+                    print('    ' + str(DBdata.index[DBdata_index]+1) + '.', item['Item Name'], '[]', pagedata["Sales/Day"])
 
     DBdata.to_hdf('../data/item_info.h5', 'csgo', mode='w')
     print('    [SELENIUM WROTE TO FILE.]')
@@ -83,47 +85,47 @@ def json_search(browser, infodict):
     ### STEP 1: GATHER DATA ### TODO TODO Check to see that it works with infodict, etc. TODO TODO
     ###########################
 
-    allquery = 'https://steamcommunity.com/market/search/render/?category_730_ItemSet&appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory0&count=100&start='
+    # allquery = 'https://steamcommunity.com/market/search/render/?category_730_ItemSet&appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory0&count=100&start='
 
-    firstrun = True
-    all_items_reached = False
-    startloc = 0
-    results = []
-    browser = webdriver.Chrome()
-    find_xpath = browser.find_element_by_xpath
-    while not all_items_reached:
-        # page = requests.get(allquery + str(startloc))
-        # text = html.fromstring(page.content).xpath('text()')[0]
-        # print(text)
-        browser.get(allquery + str(startloc))
-        text = find_xpath('//body').text
-        # print(text)
-        response = json.loads(text)
-        # print(response)
-        success = response['success']
-        if success == True:
-            print('Got json at:', startloc)
-        else:
-            print('Uh oh, pull failure:', success)
-            raise Exception
-        results += response['results']
+    # firstrun = True
+    # all_items_reached = False
+    # startloc = 0
+    # results = []
+    # browser = webdriver.Chrome()
+    # find_xpath = browser.find_element_by_xpath
+    # while not all_items_reached:
+    #     # page = requests.get(allquery + str(startloc))
+    #     # text = html.fromstring(page.content).xpath('text()')[0]
+    #     # print(text)
+    #     browser.get(allquery + str(startloc))
+    #     text = find_xpath('//body').text
+    #     # print(text)
+    #     response = json.loads(text)
+    #     # print(response)
+    #     success = response['success']
+    #     if success == True:
+    #         print('Got json at:', startloc)
+    #     else:
+    #         print('Uh oh, pull failure:', success)
+    #         raise Exception
+    #     results += response['results']
 
-        if firstrun:
-            size = response['total_count']
-            firstrun = False
+    #     if firstrun:
+    #         size = response['total_count']
+    #         firstrun = False
         
-        startloc += 100
-        if startloc > size:
-            break
-        time.sleep(4)
+    #     startloc += 100
+    #     if startloc > size:
+    #         break
+    #     time.sleep(4)
 
-    for i, item in enumerate(results):
-        results[i] = {'name': item['name'],
-                    'sell_price': item['sell_price'],
-                    'sell_listings': item['sell_listings']}
-    data = pd.DataFrame(results)
+    # for i, item in enumerate(results):
+    #     results[i] = {'name': item['name'],
+    #                 'sell_price': item['sell_price'],
+    #                 'sell_listings': item['sell_listings']}
+    # data = pd.DataFrame(results)
 
-    data.to_hdf('../../data/global_pricing.h5', 'csgo')
+    # data.to_hdf('../../data/global_pricing.h5', 'csgo')
 
     ############################################
     ### STEP 2: SEARCH FOR BUY OPPORTUNITIES ###
