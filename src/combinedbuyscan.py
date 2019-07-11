@@ -10,12 +10,13 @@
 ####################################################################################################
 
 ### External libraries
-from selenium import webdriver                     # Web navigation
-import pandas as pd                                # Dataset format
+from selenium import webdriver              # Web navigation
+import pandas as pd                         # Dataset format
 
 ### Standard libraries
-from itertools import cycle                        # Specify a pattern to repeat forever
-from copy import deepcopy                          # Python object reference refers to mem locations
+from itertools import cycle                 # Specify a pattern to repeat forever
+from copy import deepcopy                   # Python object reference refers to mem locations
+import warnings                             # Our data storage method produces a PerformanceWarning
 
 ### Local Functions
 from combinedfuncs import getLoginInfo
@@ -24,7 +25,7 @@ from selenium_mr.browse_itempage import steamLogin
 
 ### Hyperparameters {
 selenium_loadtime = 2 # Selenium page loadtime
-json_loadtime = 3     # Json page loadtime
+json_loadtime = 5.75  # Json page loadtime
                       # We only need to make 16 requests for CSGO factory new, 
                       # so we don't currently hit the server-side minute cap (>=20 req/min), 
                       # but it does seem to ban lower than this speed.
@@ -38,7 +39,7 @@ verbose = False       # Print data about each item when scanned
 pattern = [
     {
         'Method': 'selenium_search',
-        'Pages': 30,
+        'Pages': 20,
         'Load Time': selenium_loadtime,
         'Verbose': verbose
     },
@@ -49,6 +50,8 @@ pattern = [
     }
 ]
 ### }
+
+warnings.simplefilter('ignore') # Not best practice, but wasn't sure how to make this more specific
 
 ####################################################################################################
 
@@ -86,4 +89,7 @@ if __name__ == '__main__':
     executer = PatternExecuter(pattern)
     while True:
         browser, buyrecs = executer.run(browser)
-        print(buyrecs)
+        if buyrecs == [] and not verbose:
+            pass
+        else:
+            print(buyrecs)

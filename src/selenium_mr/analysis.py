@@ -16,16 +16,23 @@ import scipy.optimize                       # Finding highest profit strategy
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 from math import floor, ceil                # Data analysis use in medians
 from copy import deepcopy                   # Needed for some reference passing
+from sty import fg                          # Cross-platform color printing
 
 # Print settings
 pd.options.display.width = 0
 pd.set_option('display.max_columns', 7)
 
-def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day']):
+def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day'], color=None):
     if printtype == 'head':
-        print(df[keys].head(printval))
+        if color:
+            print(color + df[keys].head(printval) + fg.rs)
+        else:
+            print(df[keys].head(printval))
     elif printtype == 'tail':
-        print(df[keys].tail(printval))
+        if color:
+            print(color + df[keys].tail(printval) + fg.rs)
+        else:
+            print(df[keys].tail(printval))
     else:
         raise Exception('Unsupported print type: ' + printtype)
 
@@ -175,7 +182,8 @@ def median(L):
             raise Exception('!!! ' + str(L))
 
 def quartiles(L):
-    assert len(L) >= 3, 'Quartiles are meaningless with less than 3 data points'
+    assert len(L) >= 3, ('Quartiles are meaningless with less than 3 data points.'
+                         'Did you use volumeFilter after using historicalSelector?')
     L = sorted(L)
 
     Q2, midpoint = median(L)
@@ -392,14 +400,14 @@ if __name__ == '__main__':
     # print()
 
     # Testing LessThanThirdQuartileHistorical
-    # LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.15, [2,0]])
-    # LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
-    # filterPrint(LTTQHsat, keys=printkeys)
-    # # TODO: Implement writing to file
-    # # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
-    # #          'add',
-    # #          '../../data/LTTQHitems.txt')
-    # print()
+    LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.05, [8,0]])
+    LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
+    filterPrint(LTTQHsat, keys=printkeys)
+    # TODO: Implement writing to file
+    # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
+    #          'add',
+    #          '../../data/LTTQHitems.txt')
+    print()
 
     # # Testing SpringSearch
     # SSsat, printkeys = basicTest(SpringSearch, inputs=[1.15])

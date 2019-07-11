@@ -7,18 +7,20 @@ from selenium import webdriver              # Primary navigation of Steam price 
 from selenium.common.exceptions import NoSuchElementException 
                                             # ^^ Dealing with page load failure.
 import pandas as pd                         # Primary dataset format
+from sty import fg                          # Convenient cross-platform color printing
 
 ### Standard libraries
 import time                                 # Waiting so no server-side ban
 import json                                 # Metadata read/write
 
 ### Local Functions
-# from selenium_mr.analysis import LessThanThirdQuartileHistorical 
-#                                             # Notify of buy-worthy things while running
 from selenium_mr.analysis import filterPrint            # Pretty printing by info in dict
+from selenium_mr.analysis import historicalDateFilter   # Filter before doing quartiles
+from selenium_mr.analysis import volumeFilter           # Ensure quartileHistorical runs without bugs
+from selenium_mr.analysis import quartileHistorical     # Buy checks in json_search
+from selenium_mr.analysis import LessThanThirdQuartileHistorical # Alerts during selenium_search
 from selenium_mr.browse_itempage import browseItempage  # Scrapes data from Steam item pages
 from selenium_mr.browse_itempage import WaitUntil       # Implements standard page waits in with block
-from selenium_mr.analysis import quartileHistorical, standardFilter, historicalDateFilter
 
 ####################################################################################################
 
@@ -39,8 +41,6 @@ def selenium_search(browser, infodict):
     current_iloc = metadata['current_iloc']
     ### }
 
-    print('Starting selenium scanner...')
-
     DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
     of_interest = DBdata[DBdata['Sales/Day'] >= 1]
     dflength = len(of_interest.index)
@@ -58,19 +58,20 @@ def selenium_search(browser, infodict):
             DBdata.loc[DBdata_index] = newentry
 
             if pagedata['Listings']: # Nonempty
-                # model = LessThanThirdQuartileHistorical(1.15, [2,0])
-                # printkeys = model.printkeys
-                # satdf = model.run(pd.DataFrame([newentry]))
-                # if len(satdf.index) > 0:
-                #     print('!!!!', 'Found a Q3 satisfying item')
-                #     filterPrint(satdf, keys=printkeys)
+                model = LessThanThirdQuartileHistorical(1.15, [2,0])
+                printkeys = model.printkeys
+                satdf = model.run(pd.DataFrame([newentry]))
+                if len(satdf.index) > 0:
+                    print(fg.li_green + '!!!! Found a Q3 satisfying item' + fg.rs)
+                    filterPrint(satdf, keys=printkeys, color=fg.li_green)
                 if verbose:
                     print('    ' + str(DBdata.index[DBdata_index]+1) + '.', item['Item Name'], pagedata['Listings'][0], pagedata["Sales/Day"])
             else:
                 if verbose:
                     print('    ' + str(DBdata.index[DBdata_index]+1) + '.', item['Item Name'], '[]', pagedata["Sales/Day"])
             current_iloc += 1
-            if current_iloc > dflength:
+            if current_iloc >= dflength:
+                print('Index reset!')
                 current_iloc = 0
 
     DBdata.to_hdf('../data/item_info.h5', 'csgo', mode='w')
@@ -85,7 +86,7 @@ def selenium_search(browser, infodict):
 
 def json_search(browser, infodict):
     ###########################
-    ### STEP 1: GATHER DATA ### TODO TODO Check to see that it works with infodict, etc. TODO TODO
+    ### STEP 1: GATHER DATA ###
     ###########################
 
     ### Hyperparameters {
@@ -94,10 +95,16 @@ def json_search(browser, infodict):
     with open('combineddata.json','r') as f:
         metadata = json.load(f)
     ### }
+    
+    conditions = [0, # Factory New
+                  1, # Minimal Wear
+                  2, # Field-Tested
+                  3, # Well-Worn
+                  4] # Battle-Scarred
 
     allquery = ('https://steamcommunity.com/market/search/render/?category_730_ItemSet&'
-                'appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory0&'
-                'count=100&start=')
+                'appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory0'
+                '&count=100&start=')
 
     firstrun = True
     all_items_reached = False
@@ -110,13 +117,14 @@ def json_search(browser, infodict):
             browser.get(allquery + str(currloc))
             text = find_xpath('//body').text
             response = json.loads(text)
-            success = response['success']
-            if success == True:
-                if verbose:
-                    print('Got json at:', currloc)
-            else:
-                print('Uh oh, pull failure:', success)
+            try:
+                success = response['success']
+            except TypeError:
+                print('Uh oh, pull failure. Try and figure out how long the cooldown is.')
                 raise Exception
+            
+            if verbose:
+                print('Got json at:', currloc)
             results += response['results']
 
             # If first run, get total number of expected items
@@ -149,6 +157,8 @@ def json_search(browser, infodict):
     DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
     DBdata = DBdata[DBdata['Sales/Day'] >= 1]
 
+    DBdata = historicalDateFilter(DBdata, 8)
+    DBdata = volumeFilter(DBdata, 3)
     quarts = DBdata['Sales from last month'].apply(quartileHistorical)
     quarts = pd.DataFrame(quarts.tolist(), index=quarts.index, columns=['Q1','Q2','Q3'])
     DBdata = DBdata.join(quarts)
@@ -162,8 +172,8 @@ def json_search(browser, infodict):
     for i, item in JSONdata.iterrows():
         if item['name'] in DBdata_index:
             DBrow = DBdata.loc[DBdata_index[item['name']]]
-            if item['sell_price']*1.15 < DBrow['Q3']:
-                print('yay', item['Name'], item['sell_price'])
+            if item['sell_price']*1.05 < DBrow['Q3']:
+                print('yay', item['Name'], item['sell_price'], DBrow['Q3'])
                 print(DBrow)
                 final_results.append(item)
 
