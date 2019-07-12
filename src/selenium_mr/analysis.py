@@ -307,7 +307,7 @@ class LessThanThirdQuartileHistorical:
 
         lowest_listings = pd.DataFrame(data={'Lowest Listing': satdf['Listings'].apply(lambda L: L[0])})
         satdf = satdf.join(lowest_listings)
-        satdf = satdf[satdf['Lowest Listing'] < satdf['Q1']]
+        # satdf = satdf[satdf['Lowest Listing'] < satdf['Q1']]
         satdf = satdf[satdf['Lowest Listing']*(self.percentage + .01) < satdf['Q3']]
 
         details = pd.DataFrame(satdf['Q3']/satdf['Lowest Listing'], columns=['Ratio'])
@@ -390,7 +390,7 @@ if __name__ == '__main__':
     DBdata = pd.read_hdf('../../data/item_info.h5', 'csgo')
     print('Successful import! Number of entries:', len(DBdata.index))
     DBdata = standardFilter(DBdata)
-    print('Number that satisfy volume, listing, and souvenir filters:', len(DBdata.index))
+    print('Number that satisfy volume and souvenir filters:', len(DBdata.index))
     # print()
 
     # # Testing SimpleListingProfit
@@ -399,15 +399,15 @@ if __name__ == '__main__':
     # filterPrint(SLPsat, keys=printkeys)
     # print()
 
-    # Testing LessThanThirdQuartileHistorical
-    LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.05, [8,0]])
-    LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
-    filterPrint(LTTQHsat, keys=printkeys)
-    # TODO: Implement writing to file
-    # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
-    #          'add',
-    #          '../../data/LTTQHitems.txt')
-    print()
+    # # Testing LessThanThirdQuartileHistorical
+    # LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.15, [8,0]])
+    # LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
+    # filterPrint(LTTQHsat, keys=printkeys)
+    # # TODO: Implement writing to file
+    # # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
+    # #          'add',
+    # #          '../../data/LTTQHitems.txt')
+    # print()
 
     # # Testing SpringSearch
     # SSsat, printkeys = basicTest(SpringSearch, inputs=[1.15])
@@ -420,23 +420,28 @@ if __name__ == '__main__':
     # portfolio_size = 100
     # # print('Highest profit at',portfolio_size)
 
-    # tester = BackTester(LessThanThirdQuartileHistorical, [5,4], 2, .85, [7])
-    # purchases, profits = tester.runBacktest()
+    tester = BackTester(LessThanThirdQuartileHistorical, [5,4], 2, .85, [1.15, [8,0]])
+    purchases, profits = tester.runBacktest()
     
-    # def profitAnalysis(profits):
-    #     net = sum(profits)
-    #     positive_profits = [x for x in profits if x > 0]
-    #     negative_profits = [x for x in profits if x < 0]
-    #     num_recommendations = sum([len(x['Purchases']) for x in purchases])
-    #     cashflow = sum([sum([y['Buy Price'] for y in x['Purchases']]) for x in purchases])
-    #     print('Net profit:', round(net, 2))
-    #     print('Total loss:', round(sum(negative_profits), 2), '(From ' + str(len(negative_profits)) + ' recommendations)')
-    #     print('Total gain:', round(sum(positive_profits), 2), '(From ' + str(len(positive_profits)) + ' recommendations)')
-    #     print('Average net profit per item:', round(net / num_recommendations, 2))
-    #     print('Total $$$ flow:', round(cashflow, 2))
-    #     print('Cashflow per $ profit:', round(cashflow / net, 2))
+    # TODO: Update backtest force sell to be more accurate (sell immediately at next price buy instead
+    #       of max over the last few days)
 
-    # profitAnalysis(profits)
+    def profitAnalysis(profits):
+        net = sum(profits)
+        positive_profits = [x for x in profits if x > 0]
+        negative_profits = [x for x in profits if x < 0]
+        num_recommendations = sum([len(x['Purchases']) for x in purchases])
+        cashflow = sum([sum([y['Buy Price'] for y in x['Purchases']]) for x in purchases])
+        print('Net profit:', round(net, 2))
+        print('Total loss:', round(sum(negative_profits), 2), '(From ' + str(len(negative_profits)) + ' recommendations)')
+        print('Total gain:', round(sum(positive_profits), 2), '(From ' + str(len(positive_profits)) + ' recommendations)')
+        print('Average net profit per item:', round(net / num_recommendations, 2))
+        print('Total $$$ flow:', round(cashflow, 2))
+        print('Cashflow per $ profit:', round(cashflow / net, 2))
+
+    profitAnalysis(profits)
+
+    # TODO: Make a histogram of profit recommendations
 
     # print('Testing for optimal strategy on given timescale...')
 

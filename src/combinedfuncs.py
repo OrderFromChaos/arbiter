@@ -95,53 +95,66 @@ def json_search(browser, infodict):
     with open('combineddata.json','r') as f:
         metadata = json.load(f)
     ### }
-    
+        
     conditions = [0, # Factory New
-                  1, # Minimal Wear
-                  2, # Field-Tested
-                  3, # Well-Worn
-                  4] # Battle-Scarred
+                1, # Minimal Wear
+                2, # Field-Tested
+                3, # Well-Worn
+                4] # Battle-Scarred
 
-    allquery = ('https://steamcommunity.com/market/search/render/?category_730_ItemSet&'
-                'appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory0'
-                '&count=100&start=')
+    fullres = []
+    for i in conditions:
+        if verbose:
+            print(fg.li_cyan + 'Starting condition ' + str(i) + fg.rs)
+        allquery = ('https://steamcommunity.com/market/search/render/?category_730_ItemSet&'
+                    'appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory' + str(i) +
+                    '&count=100&start=')
 
-    firstrun = True
-    all_items_reached = False
-    currloc = 0
-    results = []
-    find_xpath = browser.find_element_by_xpath
-    while not all_items_reached:
-        with WaitUntil(navigation_time):
-            # Get json response using selenium (requests seemed to be more prone to breaking)
-            browser.get(allquery + str(currloc))
-            text = find_xpath('//body').text
-            response = json.loads(text)
-            try:
-                success = response['success']
-            except TypeError:
-                print('Uh oh, pull failure. Try and figure out how long the cooldown is.')
-                raise Exception
-            
-            if verbose:
-                print('Got json at:', currloc)
-            results += response['results']
+        firstrun = True
+        all_items_reached = False
+        currloc = 0
+        results = []
+        find_xpath = browser.find_element_by_xpath
+        while not all_items_reached:
+            with WaitUntil(navigation_time):
+                # Get json response using selenium (requests seemed to be more prone to breaking)
+                try:
+                    browser.get(allquery + str(currloc))
+                    text = find_xpath('//body').text
+                    response = json.loads(text)
+                except json.decoder.JSONDecodeError:
+                    print('502 Bad Gateway, waiting longer')
+                    time.sleep(navigation_time*5)
+                    browser.get(allquery + str(currloc))
+                    text = find_xpath('//body').text
+                    response = json.loads(text)
+                try:
+                    success = response['success']
+                except TypeError:
+                    print('Uh oh, null result. Reduce navigation_time. TODO: Implement a 5.05 minute cooldown here.')
+                    raise Exception
+                
+                if verbose:
+                    print(fg(245) + 'Got json at: ' + str(currloc) + fg.rs)
+                results += response['results']
 
-            # If first run, get total number of expected items
-            if firstrun:
-                size = response['total_count']
-                firstrun = False
-            
-            # Loop breaking logic based on expected item count
-            currloc += 100
-            if currloc > size:
-                break
+                # If first run, get total number of expected items
+                if firstrun:
+                    size = response['total_count']
+                    firstrun = False
+                
+                # Loop breaking logic based on expected item count
+                currloc += 100
+                if currloc > size:
+                    break
 
-    for i, item in enumerate(results):
-        results[i] = {'name': item['name'],
-                      'sell_price': item['sell_price'],
-                      'sell_listings': item['sell_listings']}
-    JSONdata = pd.DataFrame(results)
+        for i, item in enumerate(results):
+            results[i] = {'name': item['name'],
+                          'sell_price': item['sell_price'],
+                          'sell_listings': item['sell_listings']}
+        fullres += results
+
+    JSONdata = pd.DataFrame(fullres)
 
     # For logging; next step uses the 'data' variable
     JSONdata.to_hdf('../data/global_pricing.h5', 'csgo', mode='w')
@@ -150,31 +163,21 @@ def json_search(browser, infodict):
     ### STEP 2: SEARCH FOR BUY OPPORTUNITIES ###
     ############################################
 
-    # General algorithm:
-    # 1. Get historical dataset
-    # 2. Compute quartiles on historical dataset
-    # 3. If JSON real lowest < Q3*1.15, alert 
     DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
-    DBdata = DBdata[DBdata['Sales/Day'] >= 1]
+    # Filter to DBdata item names that are in JSONdata
+   new_price_dict = {row['name']:row['sell_price'] for i, row in JSONdata.iterrows()}
+    DBdata = DBdata[DBdata['Item Name'].isin(new_price_dict)]
+    def convertListings(row):
+        row['Listings'] = (round(new_price_dict[row['Item Name']]/100,2),)
+        return row
 
-    DBdata = historicalDateFilter(DBdata, 8)
-    DBdata = volumeFilter(DBdata, 3)
-    quarts = DBdata['Sales from last month'].apply(quartileHistorical)
-    quarts = pd.DataFrame(quarts.tolist(), index=quarts.index, columns=['Q1','Q2','Q3'])
-    DBdata = DBdata.join(quarts)
-    # filterPrint(DBdata, keys=['Item Name', 'Date', 'Sales/Day', 'Q1', 'Q2', 'Q3'])
+    DBdata = DBdata.apply(convertListings, axis=1)
 
-    # Construct location lookup dictionary
-    DBdata_index = DBdata['Item Name'].to_dict()
-    DBdata_index = {name: index for index, name in DBdata_index.items()}
-
-    final_results = []
-    for i, item in JSONdata.iterrows():
-        if item['name'] in DBdata_index:
-            DBrow = DBdata.loc[DBdata_index[item['name']]]
-            if item['sell_price']*1.05 < DBrow['Q3']:
-                print('yay', item['Name'], item['sell_price'], DBrow['Q3'])
-                print(DBrow)
-                final_results.append(item)
+    satdf = LessThanThirdQuartileHistorical(1.15, [2,0]).run(DBdata)
+    if len(satdf.index) > 0:
+        final_results = satdf
+        final_results.sort_values('Ratio', ascending=False)
+    else:
+        final_results = []
 
     return (browser, final_results)
