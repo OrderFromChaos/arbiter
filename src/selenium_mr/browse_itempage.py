@@ -108,7 +108,7 @@ def browseItempage(browser, item, navigation_time, firstscan=False):
         pagedata['Special Type'] = ['None', 'Souvenir'][item_split[0] == 'Souvenir']
         # TODO: This fails for anything b4 the implementation of item conditions ex:
         # https://steamcommunity.com/market/listings/730/%E2%98%85%20Navaja%20Knife
-        pagedata['Condition'] = ' '.join(item_split[-2:]),
+        pagedata['Condition'] = name.split('(')[-1][:-1]
     else:
         pagedata['Item Name'] = item['Item Name']
         pagedata['Special Type'] = item['Special Type']

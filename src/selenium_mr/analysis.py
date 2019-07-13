@@ -46,7 +46,7 @@ class BackTesterV2:
     # 
     # Ideally, this can later be thrown into a profit-maximizing optimization algorithm,
     #     so we can use the "best" strategy according to backtesting.
-    def __init__(self, strategy, testregion, liquidation_force_days, inputs=None):
+    def __init__(self, strategy, testregion, liquidation_force_days, inputs=None, usefallbackmethod=False):
         # "strategy" is a class with an implemented .runBacktest() function which returns
         #     recommended buys and recommended sell/fallback prices. This class takes care of the rest, 
         #     like sells and max portfolio holds.
@@ -59,10 +59,13 @@ class BackTesterV2:
         #     After buy_date + liquidation_force_days, algo will attempt to sell at fallback price for
         #     remainder of history.
         # "inputs" is for inputs to the functions, like 1.15x pricing
+        # "usefallbackmethod" tells the backtester whether to use sell fallback price or sell fallback
+        #     method. Method is by fiat more intelligent
         self.strategy = strategy
         self.testregion = testregion
         self.liquidation_force_days = liquidation_force_days
         self.inputs = inputs
+        self.usefallbackmethod = usefallbackmethod
 
         # Will eventually be a list of {'buy date': , 'sell recommend': , 'sell fallback': }
         self.purchases = []
@@ -146,6 +149,14 @@ class BackTesterV2:
                     
                     # Phase 2 checks
                     soldphase2 = False
+                    if self.usefallbackmethod: # Use the intelligent re-estimate function passed along
+                        fxn = p['Fallback Method']
+                        # This is not particularly generalizable at the moment; figure out a new method
+                        price_estimate = fxn(relevant_history, phase1bounds)
+                    else: # Go based on the less intelligent estimated fallback price
+                        price_estimate = p['Fallback Sell']
+                    
+                    # Try and find a sell for the fallback estimate price
                     for index, historicalsell in enumerate(phase2region):
                         if historicalsell[1] >= p['Fallback Sell']:
                             soldphase2 = True
@@ -215,7 +226,7 @@ def median(L):
 
 def quartiles(L):
     assert len(L) >= 3, ('Quartiles are meaningless with less than 3 data points.'
-                         'Did you use volumeFilter after using historicalSelector?')
+                         ' Did you use volumeFilter after using historicalSelector?')
     L = sorted(L)
 
     Q2, midpoint = median(L)
@@ -368,6 +379,15 @@ class LessThanThirdQuartileHistorical:
         #     if satisfied, log as buy
         # return buy list
 
+        def fallbackPricing(fullhistory, phase1bounds):
+            # phase1bounds = [p['Buy Date'], p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
+            # phase1region = historicalSelector(relevant_history, phase1bounds)
+            phase1bounds = deepcopy(phase1bounds)
+            phase1bounds[0] -= timedelta(days=3) # Increase window size on the left
+            newregion = historicalSelector(fullhistory, phase1bounds)
+            Q1, Q2, Q3 = quartileHistorical(newregion)
+            return Q3/1.15
+
         for index, historical_row in satdf.iterrows():
             test_row = test_samples.loc[index]
             good_to_buy = test_row['Sales from last month']
@@ -381,10 +401,12 @@ class LessThanThirdQuartileHistorical:
                          'Q3': historical_row['Q3'],
                          'Purchases': []}
             for purchase in good_to_buy:
-                p = {'Buy Date': purchase[0],
+                p = {'Name': item_dict['Name'],
+                    'Buy Date': purchase[0],
                     'Buy Price': purchase[1],
                     'Recommended Sell': item_dict['Q3'],
-                    'Fallback Sell': item_dict['Q2']}
+                    'Fallback Sell': item_dict['Q1'],
+                    'Fallback Method': fallbackPricing}
                 item_dict['Purchases'].append(p)
             if item_dict['Purchases']:
                 purchases.append(item_dict)
@@ -455,9 +477,14 @@ if __name__ == '__main__':
     # portfolio_size = 100
     # # print('Highest profit at',portfolio_size)
 
-    tester = BackTesterV2(LessThanThirdQuartileHistorical, [5,4], 2, [1.30, [8,0]])
+    # BacktesterV2: (historical buy region L, R), days of rec. sell, [function hyperparams, ...]  
+    hmeta = ([5,4], 2)
+    tester = BackTesterV2(LessThanThirdQuartileHistorical, hmeta[0], hmeta[1], 
+                          inputs=[1.30, [8,0]], usefallbackmethod=False)
     purchases, phasesells = tester.runBacktest()
     phase1sell, phase2sell, phase3sell = phasesells
+    print('Never sold items:')
+    print([p['Name'] for p in phase3sell])
 
     def profitAnalysisV2(phase1sell, phase2sell, phase3sell, historical_metadata):
         # historical_metadata: ((5,4), 2)
@@ -523,7 +550,7 @@ if __name__ == '__main__':
         print('Total loss:', cround(negative_profits))
         print('Total gain:', cround(positive_profits))
         print('Longest time to sale (hours):', max(holding_time))
-        print('Maximum portfolio size:', max(portfolio_size))
+        print('Maximum portfolio $$$:', cround(max(portfolio_size)))
         print('Highest holding number:', max(num_held))
         sns.distplot(holding_time, kde=False)
         plt.xlabel('Hours to sale')
@@ -534,26 +561,13 @@ if __name__ == '__main__':
         plt.axvline(end_of_buys)
         plt.text(end_of_buys, max(portfolio_size)*1.1, 'End of buys')
         plt.axvline(end_of_LFD)
-        plt.text(end_of_LFD, max(portfolio_size)*1.1, 'End of force sell')
+        plt.text(end_of_LFD, max(portfolio_size)*1.1, 'End of recommended sell')
         plt.xlabel('Hours into sale period')
         plt.ylabel('$$$ Portfolio Allocation')
         plt.legend(['$$$ in portfolio', 'Number of items "in" inventory'], loc='upper right')
         plt.show()
 
-        # net = sum(profits)
-        # positive_profits = [x for x in profits if x > 0]
-        # negative_profits = [x for x in profits if x < 0]
-        # num_recommendations = sum([len(x['Purchases']) for x in purchases])
-        # cashflow = sum([sum([y['Buy Price'] for y in x['Purchases']]) for x in purchases])
-        # print('Net profit:', round(net, 2))
-        # print('Total loss:', round(sum(negative_profits), 2), '(From ' + str(len(negative_profits)) + ' recommendations)')
-        # print('Total gain:', round(sum(positive_profits), 2), '(From ' + str(len(positive_profits)) + ' recommendations)')
-        # print('Average net profit per item:', round(net / num_recommendations, 2))
-        # print('Total $$$ flow:', round(cashflow, 2))
-        # print('Cashflow per $ profit:', round(cashflow / net, 2))
-
-    historical_metadata = ((5,4), 2)
-    profitAnalysisV2(phase1sell, phase2sell, phase3sell, historical_metadata)
+    profitAnalysisV2(phase1sell, phase2sell, phase3sell, hmeta)
 
     # TODO: Make a histogram of profit recommendations
 
