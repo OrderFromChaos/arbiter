@@ -7,7 +7,7 @@ from selenium_mr.analysis import filterPrint
 
 jsondata = pd.read_hdf('../../data/global_pricing.h5', 'csgo')
 seledata = pd.read_hdf('../../data/item_info.h5', 'csgo')
-seledata = SpringSearch(1.15, numdays=7).run(seledata)
+seledata = SpringSearch(1.15, numdays=2).run(seledata)
 
 print(len(seledata.index))
 
