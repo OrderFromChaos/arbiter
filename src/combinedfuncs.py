@@ -95,7 +95,7 @@ def json_search(browser, infodict):
     with open('combineddata.json','r') as f:
         metadata = json.load(f)
     ### }
-        
+
     conditions = [0, # Factory New
                 1, # Minimal Wear
                 2, # Field-Tested
@@ -165,7 +165,7 @@ def json_search(browser, infodict):
 
     DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
     # Filter to DBdata item names that are in JSONdata
-   new_price_dict = {row['name']:row['sell_price'] for i, row in JSONdata.iterrows()}
+    new_price_dict = {row['name']:row['sell_price'] for i, row in JSONdata.iterrows()}
     DBdata = DBdata[DBdata['Item Name'].isin(new_price_dict)]
     def convertListings(row):
         row['Listings'] = (round(new_price_dict[row['Item Name']]/100,2),)

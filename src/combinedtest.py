@@ -56,7 +56,7 @@ def convertListings(row):
 
 DBdata = DBdata.apply(convertListings, axis=1)
 
-satdf = LessThanThirdQuartileHistorical(1.15, [8,0]).run(DBdata)
+satdf = LessThanThirdQuartileHistorical(1.15, [7,0]).run(DBdata)
 if len(satdf.index) > 0:
     final_results = satdf.sort_values('Ratio', ascending=False)
     print(len(satdf.index))

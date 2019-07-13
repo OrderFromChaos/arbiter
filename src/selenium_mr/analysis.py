@@ -12,6 +12,8 @@
 
 import pandas as pd                         # Dataset format
 import matplotlib.pyplot as plt             # Graphing backtest outputs
+import seaborn as sns
+import numpy as np
 import scipy.optimize                       # Finding highest profit strategy
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
 from math import floor, ceil                # Data analysis use in medians
@@ -36,43 +38,38 @@ def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'B
     else:
         raise Exception('Unsupported print type: ' + printtype)
 
-class BackTester:
+class BackTesterV2:
     # This looks at historical data to see if a particular strategy would have worked.
     # Assumptions:
     #    1. Ignore market updates based on your price listings. This is imperfect
     #       (you're part of the market), but I have no idea how to account for this.
-    #    2. Perfect information on the purchasing, but not selling side.
-    #       TODO: Implement buy_ratio as well; some items sell faster than 1 minute.
-    #             As much as I'd like to think there's no algo competition, there probably is.
-    #             See how badly this affects profit.
     # 
     # Ideally, this can later be thrown into a profit-maximizing optimization algorithm,
     #     so we can use the "best" strategy according to backtesting.
-    def __init__(self, strategy, testregion, liquidation_force_days, sell_ratio, inputs=None):
+    def __init__(self, strategy, testregion, liquidation_force_days, inputs=None):
         # "strategy" is a class with an implemented .runBacktest() function which returns
-        #     profit, overall cashflow to achieve profit, max portfolio holding, 
-        #     and buy/sell history
+        #     recommended buys and recommended sell/fallback prices. This class takes care of the rest, 
+        #     like sells and max portfolio holds.
         # "testregion" is a two-len list with [startdate, enddate]. These dates can be a mix of
         #     integers (floor(today) - X days ago, where X is the int) or datetime objects.
-        # "liquidation_force_days" and "sell_ratio" tells the algorithm how to liquidate buys;
-        #     it will select liquidation_force_days after the buy and pick the highest value after
-        #     getting everything less than the sell_ratio quantile (eg .95, so everything
-        #     except the top 5% of sales). Picking these is a bit of an art, and might be worthwhile
-        #     to TODO update based on number of sales in question. 0.85 seems like a good place to
-        #     start on sell_ratio based on it excluding the highest 1/7 sales.
-        #     Note that reducing liquidation_force_days does decrease the portfolio use, but also
-        #     decreases profit potential (on average), assuming item prices stay generally constant.
+        # "liquidation_force_days" tells the algorithm how to liquidate buys. After
+        #     purchase but before buy_date + liquidation_force_days, the algo with attempt to sell at
+        #     the strategy-recommended sell price. If there is a sell above this pricing, it will sell
+        #     at the recommended price anyway (just shows that consumer willingness was there).
+        #     After buy_date + liquidation_force_days, algo will attempt to sell at fallback price for
+        #     remainder of history.
         # "inputs" is for inputs to the functions, like 1.15x pricing
         self.strategy = strategy
         self.testregion = testregion
         self.liquidation_force_days = liquidation_force_days
-        self.sell_ratio = sell_ratio
         self.inputs = inputs
 
+        # Will eventually be a list of {'buy date': , 'sell recommend': , 'sell fallback': }
         self.purchases = []
     def runBacktest(self, verbose=True):
         global DBdata
-        # This is where you have to use deepcopies. Both are needed for purchase finding step
+        # First, get purchases from your strategy over the region you selected.
+        # This is where you have to use deepcopies.
         if verbose:
             print('Backtesting [{0}]...'.format(self.strategy.__name__))
         sacrificial_testregion = deepcopy(self.testregion)
@@ -83,7 +80,7 @@ class BackTester:
         if verbose:
             print('Generating purchases over testregion...')
         sacrificial_DBdata = deepcopy(DBdata) # This deepcopy to keep it for later liquidation
-        self.purchases = self.strategy.runBacktest(sacrificial_DBdata, test_samples, self.testregion)
+        self.purchases = self.strategy.runBacktestV2(sacrificial_DBdata, test_samples, self.testregion)
 
         # Now take these purchases and carry out liquidation sells
         # Note that if you hold eg. 5 of an item, you permanently remove one of the possible sell
@@ -96,42 +93,77 @@ class BackTester:
         # Purchase output is not pandas since it's nested and too complicated to get any gain from
         # not using dicts
 
+        # PHASE 1: Attempt to sell at recommended price during sell region
         nametoindex = {x['Item Name']: i for i, x in DBdata.iterrows()}
-        profits = []
-        for unique_name in self.purchases:
+        phase1sell = [] # Sold during first period at recommended sell
+        phase2sell = [] # Sold during second period at fallback sell
+        phase3sell = [] # Never sold
+        for unique_name in self.purchases: # For each unique item name
             firstrun = True
             relevant_history = DBdata.loc[nametoindex[unique_name['Name']]]['Sales from last month']
 
-            for i, p in enumerate(unique_name['Purchases']):
+            for i, p in enumerate(unique_name['Purchases']): # For each purchase under that item name
+                # To prevent multiple sells, I use a rolling window of history which deletes sells
+                # when they happen.
+                ### Sell Window Updating {
                 if firstrun:
-                    # Initialize the sell region
-                    sellregion = [p['Date'], p['Date'] + timedelta(days=self.liquidation_force_days)]
-                    sellregion = historicalSelector(relevant_history, sellregion)
-                    max_sell = pd.Series(data = [x[1] for x in sellregion]).quantile(self.sell_ratio)
+                    # Initialize rolling window
+                    phase1bounds = [p['Buy Date'], p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
+                    phase1region = historicalSelector(relevant_history, phase1bounds)
+                    phase2bounds = [phase1bounds[1], unique_name['Date Pulled']]
+                    phase2region = historicalSelector(relevant_history, phase2bounds)
                 else:
-                    # Update the sell region
-                    sellregion = [x for x in sellregion if x > p['Date']] # Remove old left elts.
-                    # Add new right region
-                    # [General idea]:
-                    # If previousend > p['Date'], 
-                    #     append previousend to p['Date'] + self.liquidation_force_days
-                    # else append p['Date'] to p['Date'] + self.liquidation_force_days
-                    previousend = (unique_name['Purchases'][i-1]['Date'] + 
+                    # Remove old left region; sell dates should be +0 or increasing
+                    phase1region = [x for x in phase1region if x > p['Buy Date']]
+                    phase2region = [x for x in phase2region if x > p['Buy Date']]
+                    # Add new rightmost region (only for phase1region; phase2region extends to end)
+                    previous_end = (unique_name['Purchases'][i-1]['Date'] + 
                                     timedelta(days=self.liquidation_force_days))
-                    if previous_end > p['Date']:
+                    if previous_end > p['Buy Date']:
                         rightaddition = [previousend,
-                                         p['Date'] + timedelta(days=self.liquidation_force_days)]
+                                         p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
                     else:
-                        rightaddition = [p['Date'],
-                                         p['Date'] + timedelta(days=self.liquidation_force_days)]
-                    sellregion += historicalSelector(relevant_history, rightaddition)
-                sellregion = [x for x in sellregion if x[1] <= max_sell]
-                prices_only = [x[1] for x in sellregion]
-                sell_price = max(prices_only)
-                profits.append(sell_price/1.15 - p['Buy Price'])
-                del sellregion[prices_only.index(sell_price)] # Cannot sell twice at the same value
+                        rightaddition = [p['Buy Date'],
+                                            p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
+                    phase1region += historicalSelector(relevant_history, rightaddition)
+                p['Regions'] = (phase1bounds, phase2bounds)
+                ### Sell Window Updating }
+                
+                ### Find sells {
+                while True: # Enforces phase1, then phase2, then phase3 logic
+                    # Phase 1 checks
+                    soldphase1 = False
+                    for index, historicalsell in enumerate(phase1region):
+                        if historicalsell[1] >= p['Recommended Sell']:
+                            soldphase1 = True
+                            del phase1region[index]
+                            p['Profit'] = p['Recommended Sell']/1.15 - p['Buy Price']
+                            p['Sell Date'] = historicalsell[0]
+                            phase1sell.append(p)
+                            break
+                    if soldphase1:
+                        break
+                    
+                    # Phase 2 checks
+                    soldphase2 = False
+                    for index, historicalsell in enumerate(phase2region):
+                        if historicalsell[1] >= p['Fallback Sell']:
+                            soldphase2 = True
+                            del phase2region[index]
+                            p['Profit'] = p['Fallback Sell']/1.15 - p['Buy Price']
+                            p['Sell Date'] = historicalsell[0]
+                            phase2sell.append(p)
+                            break
+                    if soldphase2:
+                        break
+                    else:
+                        # Neither conditions satisfied, so append to phase3sell
+                        phase3sell.append(p)
+                        break
+        
+        print('Finished figuring out sales! Sending sells to analysis...')
 
-        return (self.purchases, profits)
+        return (self.purchases, (phase1sell, phase2sell, phase3sell))
 
 class CurrTester:
     def __init__(self, strategy):
@@ -321,14 +353,13 @@ class LessThanThirdQuartileHistorical:
         #     itemdict['Profit/Day'] = round(itemdict['Profit']*item['Sales/Day']/4,2)
         #     return itemdict
         return satdf
-
-    def runBacktest(self, df, test_samples, test_region):
+    
+    def runBacktestV2(self, df, test_samples, test_region):
         # 'test_samples' is a dataframe where everything in 'Sales from last month' are buy prices 
         #     to check for that item
         # 'test_region' tells you were to measure quartiles from
 
         satdf = self.prepare(df, dateregion=[test_region[0] + (self.dateregion[0]-self.dateregion[1]), test_region[0]])
-        # purchases = pd.DataFrame(columns=['Name', 'Date', 'Sales/Day', 'Buy Price', 'Q1', 'Q3'])
         purchases = []
 
         # Algorithm, in short:
@@ -343,13 +374,17 @@ class LessThanThirdQuartileHistorical:
             good_to_buy = [x for x in good_to_buy if x[1] < historical_row['Q3']/(self.percentage + .01)
                                                   and x[1] < historical_row['Q1']]
             item_dict = {'Name': historical_row['Item Name'],
+                         'Date Pulled': historical_row['Date'],
                          'Sales/Day': historical_row['Sales/Day'],
                          'Q1': historical_row['Q1'],
+                         'Q2': historical_row['Q2'],
                          'Q3': historical_row['Q3'],
                          'Purchases': []}
             for purchase in good_to_buy:
-                p = {'Date': purchase[0],
-                    'Buy Price': purchase[1]}
+                p = {'Buy Date': purchase[0],
+                    'Buy Price': purchase[1],
+                    'Recommended Sell': item_dict['Q3'],
+                    'Fallback Sell': item_dict['Q2']}
                 item_dict['Purchases'].append(p)
             if item_dict['Purchases']:
                 purchases.append(item_dict)
@@ -420,26 +455,105 @@ if __name__ == '__main__':
     # portfolio_size = 100
     # # print('Highest profit at',portfolio_size)
 
-    tester = BackTester(LessThanThirdQuartileHistorical, [5,4], 2, .85, [1.15, [8,0]])
-    purchases, profits = tester.runBacktest()
-    
-    # TODO: Update backtest force sell to be more accurate (sell immediately at next price buy instead
-    #       of max over the last few days)
+    tester = BackTesterV2(LessThanThirdQuartileHistorical, [5,4], 2, [1.30, [8,0]])
+    purchases, phasesells = tester.runBacktest()
+    phase1sell, phase2sell, phase3sell = phasesells
 
-    def profitAnalysis(profits):
-        net = sum(profits)
-        positive_profits = [x for x in profits if x > 0]
-        negative_profits = [x for x in profits if x < 0]
-        num_recommendations = sum([len(x['Purchases']) for x in purchases])
-        cashflow = sum([sum([y['Buy Price'] for y in x['Purchases']]) for x in purchases])
-        print('Net profit:', round(net, 2))
-        print('Total loss:', round(sum(negative_profits), 2), '(From ' + str(len(negative_profits)) + ' recommendations)')
-        print('Total gain:', round(sum(positive_profits), 2), '(From ' + str(len(positive_profits)) + ' recommendations)')
-        print('Average net profit per item:', round(net / num_recommendations, 2))
-        print('Total $$$ flow:', round(cashflow, 2))
-        print('Cashflow per $ profit:', round(cashflow / net, 2))
+    def profitAnalysisV2(phase1sell, phase2sell, phase3sell, historical_metadata):
+        # historical_metadata: ((5,4), 2)
+        # in other words, it needs the test region and liquidation_force_sell
+        global DBdata
 
-    profitAnalysis(profits)
+        ### Calculate and print summary statistics
+        # Basic stats
+        actually_sold = phase1sell + phase2sell
+        all_profits = [x['Profit'] for x in actually_sold]
+        positive_profits = sum([x for x in all_profits if x > 0])
+        negative_profits = sum([x for x in all_profits if x < 0])
+        net = sum(all_profits)
+        # Holding stats
+        # Goal: iterate over each available hour. Sum over currently active buys (inclusive) to
+        #       see current portfolio usage. This allows us to keep track of max inventory size and
+        #       max money input.
+        #       Generate a graph with this data. Output max holding.
+        # Region is different for every item, so must use the stored item buy and sell date
+        # First, histogram the holding times
+        holding_time = [(x['Sell Date'] - x['Buy Date']).total_seconds()//3600 for x in actually_sold]  # in hrs
+        # Then, figure out portfolio holdings
+        all_buys = phase1sell + phase2sell + phase3sell
+        mindate = min([x['Regions'][0][0] for x in all_buys])
+        maxdate = max([x['Regions'][1][1] for x in all_buys])
+        expected_hours = int((maxdate-mindate).total_seconds()//3600)
+        end_of_buys = (historical_metadata[0][0] - historical_metadata[0][1])*24
+        end_of_LFD = (end_of_buys//24 + historical_metadata[1])*24
+        hour_spread = pd.date_range(start=mindate.strftime('%Y-%m-%d'), 
+                                    end=maxdate.strftime('%Y-%m-%d'),
+                                    periods=expected_hours+1)
+        portfolio_size = [0]*(expected_hours+1)
+        num_held = deepcopy(portfolio_size) # Lazy/10
+        for p in all_buys:
+            # Have to convert to relative holding regions
+            has_sale = False
+            buy_date = p['Buy Date']
+            # relative_buy = ((p['Buy Date'] - sell_start).total_seconds()/
+            #                                   (final_sell - sell_start).total_seconds())
+            if 'Sell Date' in p:
+                # relative_sell = ((p['Sell Date'] - sell_start).total_seconds()/
+                #                                    (final_sell - sell_start).total_seconds())
+                has_sale = True
+                sell_date = p['Sell Date']
+            buy_price = p['Buy Price']
+            for index, hour in enumerate(hour_spread):
+                if has_sale:
+                    if buy_date <= hour <= sell_date:
+                        portfolio_size[index] += buy_price
+                        num_held[index] += 1
+                else:
+                    if buy_date <= hour:
+                        portfolio_size[index] += buy_price
+                        num_held[index] += 1
+        
+        # Printing/graphing results
+        cround = lambda currency: round(currency, 2)
+        print('###################################################################################')
+        print('Phase 1 sells:', len(phase1sell))
+        print('Phase 2 sells:', len(phase2sell))
+        print('Never sold:', len(phase3sell))
+        print('Net profit:', cround(net))
+        print('Total loss:', cround(negative_profits))
+        print('Total gain:', cround(positive_profits))
+        print('Longest time to sale (hours):', max(holding_time))
+        print('Maximum portfolio size:', max(portfolio_size))
+        print('Highest holding number:', max(num_held))
+        sns.distplot(holding_time, kde=False)
+        plt.xlabel('Hours to sale')
+        plt.ylabel('Volume of item sales')
+        plt.show()
+        plt.plot(portfolio_size, color='blue', label='$$$ in portfolio')
+        plt.plot(num_held, color='red', label='Number of items "in" inventory')
+        plt.axvline(end_of_buys)
+        plt.text(end_of_buys, max(portfolio_size)*1.1, 'End of buys')
+        plt.axvline(end_of_LFD)
+        plt.text(end_of_LFD, max(portfolio_size)*1.1, 'End of force sell')
+        plt.xlabel('Hours into sale period')
+        plt.ylabel('$$$ Portfolio Allocation')
+        plt.legend(['$$$ in portfolio', 'Number of items "in" inventory'], loc='upper right')
+        plt.show()
+
+        # net = sum(profits)
+        # positive_profits = [x for x in profits if x > 0]
+        # negative_profits = [x for x in profits if x < 0]
+        # num_recommendations = sum([len(x['Purchases']) for x in purchases])
+        # cashflow = sum([sum([y['Buy Price'] for y in x['Purchases']]) for x in purchases])
+        # print('Net profit:', round(net, 2))
+        # print('Total loss:', round(sum(negative_profits), 2), '(From ' + str(len(negative_profits)) + ' recommendations)')
+        # print('Total gain:', round(sum(positive_profits), 2), '(From ' + str(len(positive_profits)) + ' recommendations)')
+        # print('Average net profit per item:', round(net / num_recommendations, 2))
+        # print('Total $$$ flow:', round(cashflow, 2))
+        # print('Cashflow per $ profit:', round(cashflow / net, 2))
+
+    historical_metadata = ((5,4), 2)
+    profitAnalysisV2(phase1sell, phase2sell, phase3sell, historical_metadata)
 
     # TODO: Make a histogram of profit recommendations
 
