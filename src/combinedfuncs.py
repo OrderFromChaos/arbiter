@@ -158,22 +158,6 @@ def json_search(browser, DBdata, infodict):
                 'sell_listings_num': res['sell_listings'] # Don't think this is needed
             }
 
-        # Check if results has been seen before
-        # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
-        # It looks like json requests are being cached, although further analysis (actually hashing
-        # the tuple of all information) is needed. If so, there will need to be regular restarts of
-        # the browser using browser.close() and browser = webdriver.Chrome().
-        # After a restart, the hash repeats stopped, which makes me think that's it's all caching based.
-        identifier = hash(tuple(json_name_dict.keys()))
-        if identifier in order_hashes:
-            print(fg.li_red, end='')
-            print('    Seen this order before! Logging time...')
-            with open('hash_overlap.txt','a') as f:
-                f.write(str(datetime.now().second) + ' ' + str(order_hashes.index(identifier)) + '\n')
-            print(fg.rs, end='')
-        else:
-            order_hashes.append(identifier)
-
         ############################################################################################
 
         filteredDBdata = DBdata[DBdata['Item Name'].isin(json_name_dict)]
@@ -201,7 +185,5 @@ def json_search(browser, DBdata, infodict):
             metadata_update = {
                 'json_condition': conditions[condition_num+1],
             }
-        metadata_update['json_hashes'] = order_hashes
         updateMetaData('combineddata.json', metadata_update)
-    
     return (browser, DBdata)
