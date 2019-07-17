@@ -27,12 +27,16 @@ pd.set_option('display.max_columns', 7)
 def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day'], color=None):
     if printtype == 'head':
         if color:
-            print(color + df[keys].head(printval) + fg.rs)
+            print(color)
+            print(df[keys].head(printval)) 
+            print(fg.rs)
         else:
             print(df[keys].head(printval))
     elif printtype == 'tail':
         if color:
-            print(color + df[keys].tail(printval) + fg.rs)
+            print(color)
+            print(df[keys].tail(printval)) 
+            print(fg.rs)
         else:
             print(df[keys].tail(printval))
     else:
@@ -158,10 +162,10 @@ class BackTesterV2:
                     
                     # Try and find a sell for the fallback estimate price
                     for index, historicalsell in enumerate(phase2region):
-                        if historicalsell[1] >= p['Fallback Sell']:
+                        if historicalsell[1] >= price_estimate:
                             soldphase2 = True
                             del phase2region[index]
-                            p['Profit'] = p['Fallback Sell']/1.15 - p['Buy Price']
+                            p['Profit'] = price_estimate/1.15 - p['Buy Price']
                             p['Sell Date'] = historicalsell[0]
                             phase2sell.append(p)
                             break
@@ -248,12 +252,16 @@ def volumeFilter(df, saleslastmonth):
 def listingFilter(df, amountoflistings):
     return df[df['Listings'].apply(len) >= amountoflistings]
 
+def listingPriceFilter(df, price):
+    return df[df['Buy Rate'] >= price]
+
 def souvenirFilter(df):
     return df[df['Special Type'] != 'Souvenir']
 
 def standardFilter(df):
     df = volumeFilter(df, 30)
     df = souvenirFilter(df)
+    df = listingPriceFilter(df, 1.00)
     return df
 
 def dayFloorDate(date):
@@ -294,10 +302,6 @@ def removeHistoricalOutliers(df, sigma):
         DBdata.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
     return DBdata
 
-def profiler(dataset):
-    # TODO: to be built later; used to mine frequency data from a group of items
-    pass
-
 ########################
 
 
@@ -335,6 +339,8 @@ class LessThanThirdQuartileHistorical:
         if not dateregion:
             dateregion = self.dateregion
         
+        df = deepcopy(df)
+
         satdf = standardFilter(df)
         satdf = volumeFilter(satdf, 60) # Make quartiles more meaningful
         satdf = historicalSelectorDF(satdf, dateregion)
@@ -383,10 +389,10 @@ class LessThanThirdQuartileHistorical:
             # phase1bounds = [p['Buy Date'], p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
             # phase1region = historicalSelector(relevant_history, phase1bounds)
             phase1bounds = deepcopy(phase1bounds)
-            phase1bounds[0] -= timedelta(days=3) # Increase window size on the left
+            phase1bounds[0] -= timedelta(days=2) # Increase window size on the left
             newregion = historicalSelector(fullhistory, phase1bounds)
             Q1, Q2, Q3 = quartileHistorical(newregion)
-            return Q3/1.15
+            return Q3
 
         for index, historical_row in satdf.iterrows():
             test_row = test_samples.loc[index]
@@ -405,7 +411,7 @@ class LessThanThirdQuartileHistorical:
                     'Buy Date': purchase[0],
                     'Buy Price': purchase[1],
                     'Recommended Sell': item_dict['Q3'],
-                    'Fallback Sell': item_dict['Q1'],
+                    'Fallback Sell': item_dict['Q2'],
                     'Fallback Method': fallbackPricing}
                 item_dict['Purchases'].append(p)
             if item_dict['Purchases']:
@@ -480,7 +486,7 @@ if __name__ == '__main__':
     # BacktesterV2: (historical buy region L, R), days of rec. sell, [function hyperparams, ...]  
     hmeta = ([5,4], 2)
     tester = BackTesterV2(LessThanThirdQuartileHistorical, hmeta[0], hmeta[1], 
-                          inputs=[1.30, [8,0]], usefallbackmethod=False)
+                          inputs=[1.25, [8,0]], usefallbackmethod=True)
     purchases, phasesells = tester.runBacktest()
     phase1sell, phase2sell, phase3sell = phasesells
     print('Never sold items:')
@@ -496,8 +502,8 @@ if __name__ == '__main__':
         actually_sold = phase1sell + phase2sell
         all_profits = [x['Profit'] for x in actually_sold]
         positive_profits = sum([x for x in all_profits if x > 0])
-        negative_profits = sum([x for x in all_profits if x < 0])
-        net = sum(all_profits)
+        negative_profits = sum([x for x in all_profits if x < 0]) - sum([x['Buy Price'] for x in phase3sell])
+        net = positive_profits + negative_profits
         # Holding stats
         # Goal: iterate over each available hour. Sum over currently active buys (inclusive) to
         #       see current portfolio usage. This allows us to keep track of max inventory size and
@@ -506,6 +512,7 @@ if __name__ == '__main__':
         # Region is different for every item, so must use the stored item buy and sell date
         # First, histogram the holding times
         holding_time = [(x['Sell Date'] - x['Buy Date']).total_seconds()//3600 for x in actually_sold]  # in hrs
+        bins = int(max(holding_time))
         # Then, figure out portfolio holdings
         all_buys = phase1sell + phase2sell + phase3sell
         mindate = min([x['Regions'][0][0] for x in all_buys])
@@ -539,32 +546,49 @@ if __name__ == '__main__':
                     if buy_date <= hour:
                         portfolio_size[index] += buy_price
                         num_held[index] += 1
-        
+
         # Printing/graphing results
         cround = lambda currency: round(currency, 2)
+        percent_all = lambda L: '({0}% of total)'.format(cround(100*len(L)/len(all_buys)))
         print('###################################################################################')
-        print('Phase 1 sells:', len(phase1sell))
-        print('Phase 2 sells:', len(phase2sell))
-        print('Never sold:', len(phase3sell))
+        print('Phase 1 sells:', len(phase1sell), percent_all(phase1sell))
+        print('Phase 2 sells:', len(phase2sell), percent_all(phase2sell))
+        print('Never sold:', len(phase3sell), percent_all(phase3sell))
         print('Net profit:', cround(net))
         print('Total loss:', cround(negative_profits))
         print('Total gain:', cround(positive_profits))
         print('Longest time to sale (hours):', max(holding_time))
         print('Maximum portfolio $$$:', cround(max(portfolio_size)))
         print('Highest holding number:', max(num_held))
-        sns.distplot(holding_time, kde=False)
+        sns.distplot(holding_time, bins=bins+1, kde=False)
         plt.xlabel('Hours to sale')
         plt.ylabel('Volume of item sales')
         plt.show()
+
         plt.plot(portfolio_size, color='blue', label='$$$ in portfolio')
-        plt.plot(num_held, color='red', label='Number of items "in" inventory')
+        plt.plot(num_held, color='red', label='Number of items in inventory')
         plt.axvline(end_of_buys)
         plt.text(end_of_buys, max(portfolio_size)*1.1, 'End of buys')
         plt.axvline(end_of_LFD)
         plt.text(end_of_LFD, max(portfolio_size)*1.1, 'End of recommended sell')
         plt.xlabel('Hours into sale period')
         plt.ylabel('$$$ Portfolio Allocation')
-        plt.legend(['$$$ in portfolio', 'Number of items "in" inventory'], loc='upper right')
+        plt.legend(['$$$ in portfolio', 'Number of items in inventory'], loc='upper right')
+        plt.show()
+
+        plt.scatter(x=[p['Recommended Sell']/p['Buy Price'] for p in actually_sold], y=[p['Profit']/p['Buy Price'] for p in actually_sold])
+        # plt.xlim([1,2.5])
+        # plt.ylim([-5,5])
+        # plt.axvline(1.30, c='k')
+        # plt.axvline(1.31, c='k')
+        # plt.axvline(1.32, c='k')
+        # plt.axvline(1.33, c='k')
+        # plt.axvline(1.34, c='k')
+        # plt.axvline(1.35, c='k')
+        # plt.axvline(1.40, c='k')
+        # plt.axvline(1.50, c='k')
+        plt.xlabel('Ratio Q3/Buy')
+        plt.ylabel('Actual Profit/Buy')
         plt.show()
 
     profitAnalysisV2(phase1sell, phase2sell, phase3sell, hmeta)

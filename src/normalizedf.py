@@ -7,8 +7,6 @@ from sty import fg
 
 # 1. Remove duplicates
 # 2. Fix weird condition titles (from findmissing.py I think)
-# 3. Convert listings, listingIDs to tuples only
-# 4. Convert sales from last month to nested tuples
 
 print('Doing initial dataset import...')
 DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')

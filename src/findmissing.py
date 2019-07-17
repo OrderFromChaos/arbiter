@@ -49,7 +49,7 @@ for index, name in enumerate(missing[startloc:]):
             print('    ' + str(index) + '.', name, 'lowest_price=EMPTY', 
                 'sales/day=' + str(pagedata["Sales/Day"]))
 
-        DBdata = DBdata.append(pagedata, ignore_index=True)
+        DBdata = DBdata.append(pagedata, ignore_index=True, verify_integrity=True) # Just in case
 
     if (index+1) % 30 == 0 or startloc + index == len(missing)-1:
         DBdata.to_hdf('../data/item_info.h5', 'csgo', mode='w')

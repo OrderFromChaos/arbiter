@@ -26,13 +26,13 @@ from selenium_mr.browse_itempage import steamLogin
 from selenium_mr.analysis import filterPrint
 
 ### Hyperparameters {
-selenium_loadtime = 2 # Selenium page loadtime
-json_loadtime = 6     # Json page loadtime
+selenium_loadtime = 3 # Selenium page loadtime
+json_loadtime = 10.19 # Json page loadtime
                       # We only need to make 16 requests for CSGO factory new, 
                       # so we don't currently hit the server-side minute cap (>=20 req/min), 
                       # but it does seem to ban lower than this speed.
 identity = 'Syris'
-verbose = True        # Print data about each item when scanned
+verbose = True       # Print data about each item when scanned
 # Pattern: list of dicts (each of which represent steps) to be cycled over
 #     [MANDATORY] step 'Method' is assumed to be a function in the current global namespace
 #     The rest are optional inputs specific to that method function
@@ -41,14 +41,15 @@ verbose = True        # Print data about each item when scanned
 pattern = [
     # {
     #     'Method': 'selenium_search',
-    #     'Pages': 20,
+    #     'Pages': 40,
     #     'Load Time': selenium_loadtime,
     #     'Verbose': verbose
-    # },
+    # }
     {
         'Method': 'json_search',
         'Load Time': json_loadtime,
-        'Verbose': verbose
+        'Verbose': verbose,
+        'LTTQH Percent': 1.05 # Might as well log everything theoretically profitable and filter in post
     }
 ]
 ### }
@@ -58,27 +59,28 @@ warnings.simplefilter('ignore') # Not best practice, but wasn't sure how to make
 ####################################################################################################
 
 class PatternExecuter:
-    def __init__(self, pattern):
+    def __init__(self, pattern, DBdata):
         self.pattern = pattern
         self.step = pattern.__next__()
+        self.DBdata = DBdata
     def run(self, browser_obj):
         print(self.step)
         fxn = globals()[self.step['Method']]
         infodict = deepcopy(self.step)
         del infodict['Method']
         if infodict: # Nonempty
-            browser_obj, buyrecs = fxn(browser_obj, infodict)
+            browser_obj, self.DBdata = fxn(browser_obj, self.DBdata, infodict)
         else:
-            browser_obj, buyrecs = fxn(browser_obj)
+            browser_obj, self.DBdata = fxn(browser_obj, self.DBdata)
         self.step = pattern.__next__()
-        return browser_obj, buyrecs
+        return browser_obj
 
 ####################################################################################################
 
 if __name__ == '__main__':
     # Import dataset, filter to high volume
     DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
-    of_interest = DBdata[DBdata['Sales/Day'] >= 1]
+    DBdata = DBdata[DBdata['Sales/Day'] >= 1]
 
     # Login
     browser = webdriver.Chrome()
@@ -88,12 +90,7 @@ if __name__ == '__main__':
     # Set pattern to repeat
     pattern = cycle(pattern)
 
-    executer = PatternExecuter(pattern)
+    executer = PatternExecuter(pattern, DBdata)
+    total_found = 0
     while True:
-        browser, buyrecs = executer.run(browser)
-        if isinstance(buyrecs, list):
-            pass
-        else:
-            print(fg.li_green)
-            filterPrint(buyrecs, printval=50, keys=['Item Name', 'Buy Rate', 'Sales/Day', 'Lowest Listing', 'Q3'])
-            print(fg.rs)
+        browser = executer.run(browser)

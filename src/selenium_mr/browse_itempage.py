@@ -71,6 +71,12 @@ def browseItempage(browser, item, navigation_time, firstscan=False):
     find_css = browser.find_element_by_css_selector
     haslistings = True
 
+    try:
+        find_css('#message > h3') # Sorry! You've made too many requests recently. Please wait and...
+        raise Exception('CRITICAL: Server temp-banned you based on request freqency. Turn up selenium_loadtime.')
+    except NoSuchElementException:
+        pass
+
     browser.implicitly_wait(15)
     try:
         prices_element = find_css('#searchResultsRows')
