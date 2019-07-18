@@ -11,14 +11,13 @@
 
 ### External libraries
 from selenium import webdriver              # Web navigation
-import pandas as pd                         # Dataset format
-from sty import fg                          # Color printing
+import pandas as pd                         # Primary dataset format
+from sty import fg                          # Color stdout printing
 
 ### Standard libraries
-# from itertools import cycle                 # Specify a pattern to repeat forever
-import queue                                # Tell 
-from copy import deepcopy                   # Python object reference refers to mem locations
-import warnings                             # Our data storage method produces a PerformanceWarning
+from collections import deque               # Flexible structure for reacting to incoming information
+from copy import deepcopy                   # Working around how Python does references
+import warnings                             # Mute PerformanceWarning during pd.to_hdf
 
 ### Local Functions
 from combinedfuncs import getLoginInfo
@@ -35,19 +34,19 @@ json_loadtime = 10.19 # Json page loadtime
 identity = 'Syris'
 verbose = True       # Print data about each item when scanned
 # Pattern: list of dicts (each of which represent steps) to be cycled over
-#     [MANDATORY] step 'Method' is assumed to be a function in the current global namespace
-#     The rest are optional inputs specific to that method function
+#     [MANDATORY] step 'Method' is a function
+#     The rest are optional inputs specific to that 'Method' function
 # Implementation detail: make sure the wait happens at the end of the function; this will allow
 #     methods to overlap nicely.
 pattern = [
     # {
-    #     'Method': 'selenium_search',
+    #     'Method': selenium_search,
     #     'Pages': 40,
     #     'Load Time': selenium_loadtime,
     #     'Verbose': verbose
     # }
     {
-        'Method': 'json_search',
+        'Method': json_search,
         'Load Time': json_loadtime,
         'Verbose': verbose,
         'LTTQH Percent': 1.05 # Might as well log everything theoretically profitable and filter in post
@@ -59,21 +58,28 @@ warnings.simplefilter('ignore') # Not best practice, but wasn't sure how to make
 
 ####################################################################################################
 
-class PatternExecuter:
-    def __init__(self, pattern, DBdata):
-        self.pattern = pattern
-        self.step = pattern.__next__()
+class QueueExecuter:
+    def __init__(self, curr_queue, DBdata):
+        self.base_queue = deepcopy(curr_queue)
+        self.curr_queue = curr_queue
+        self.step = self.curr_queue.popleft()
         self.DBdata = DBdata
     def run(self, browser_obj):
         print(self.step)
-        fxn = globals()[self.step['Method']]
-        infodict = deepcopy(self.step)
+        infodict = self.step
+        fxn = deepcopy(infodict['Method'])
         del infodict['Method']
+
         if infodict: # Nonempty
-            browser_obj, self.DBdata = fxn(browser_obj, self.DBdata, infodict)
+            browser_obj, self.DBdata, self.curr_queue = fxn(browser_obj, self.DBdata, self.curr_queue, infodict)
         else:
-            browser_obj, self.DBdata = fxn(browser_obj, self.DBdata)
-        self.step = pattern.__next__()
+            browser_obj, self.DBdata, self.curr_queue = fxn(browser_obj, self.DBdata, self.curr_queue)
+        
+        if len(self.curr_queue) == 0:
+            self.curr_queue = deepcopy(self.base_queue)
+            self.step = self.curr_queue.popleft()
+        else:
+            self.step = self.curr_queue.popleft()
         return browser_obj
 
 ####################################################################################################
@@ -89,9 +95,8 @@ if __name__ == '__main__':
     browser = steamLogin(browser, username, password, selenium_loadtime)
 
     # Set pattern to repeat
-    pattern = cycle(pattern)
+    base_queue = deque(pattern)
 
-    executer = PatternExecuter(pattern, DBdata)
-    total_found = 0
+    executer = QueueExecuter(base_queue, DBdata)
     while True:
         browser = executer.run(browser)

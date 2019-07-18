@@ -45,7 +45,7 @@ def updateMetaData(filename, update_dict):
 
 ####################################################################################################
 
-def selenium_search(browser, DBdata, infodict):
+def selenium_search(browser, DBdata, curr_queue, infodict):
     ### Hyperparameters {
     pages_to_scan = infodict['Pages']
     navigation_time = infodict['Load Time']
@@ -96,9 +96,9 @@ def selenium_search(browser, DBdata, infodict):
     }
     updateMetadata('combineddata.json', metadata_update)
     
-    return (browser, DBdata)
+    return (browser, DBdata, curr_queue)
 
-def json_search(browser, DBdata, infodict):
+def json_search(browser, DBdata, curr_queue, infodict):
 
     ### Hyperparameters {
     navigation_time = infodict['Load Time']
@@ -107,7 +107,6 @@ def json_search(browser, DBdata, infodict):
 
     metadata = getMetadata('combineddata.json')
     condition = metadata['json_condition']
-    order_hashes = metadata['json_hashes']
     ### }
 
     conditions = [0, # Factory New
@@ -186,4 +185,4 @@ def json_search(browser, DBdata, infodict):
                 'json_condition': conditions[condition_num+1],
             }
         updateMetaData('combineddata.json', metadata_update)
-    return (browser, DBdata)
+    return (browser, DBdata, curr_queue)
