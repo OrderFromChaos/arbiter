@@ -43,6 +43,12 @@ def updateMetaData(filename, update_dict):
     with open(filename, 'w') as f:
         json.dump(metadata, f, indent=4)
 
+def writeMatch(filename, append_df):
+    # matches = pd.read_hdf(filename, 'csgo')
+    # matches = matches.append(append_df, ignore_index = True)
+    matches = append_df
+    matches.to_hdf(filename, 'csgo', mode='w')
+
 ####################################################################################################
 
 def selenium_search(browser, DBdata, curr_queue, infodict):
@@ -53,6 +59,7 @@ def selenium_search(browser, DBdata, curr_queue, infodict):
 
     metadata = getMetadata('combineddata.json')
     current_iloc = metadata['selenium_iloc']
+    item_base_url = 'https://steamcommunity.com/market/listings/730/'
     ### }
 
     dflength = len(of_interest.index)
@@ -61,7 +68,7 @@ def selenium_search(browser, DBdata, curr_queue, infodict):
         item = of_interest.iloc[current_iloc]
         DBdata_index = of_interest.index[current_iloc]
         
-        browser.get(item['URL'])
+        browser.get(item_base_url + item['Item Name'])
         with WaitUntil(navigation_time):
             # Obtains all the page information and throws it into a dict called pagedata
             browser, pagedata = browseItempage(browser, item, navigation_time)
@@ -170,6 +177,8 @@ def json_search(browser, DBdata, curr_queue, infodict):
             print(fg.li_green, end='')
             filterPrint(satdf, printval=50, keys=['Item Name', 'Buy Rate', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio'])
             print(fg.rs, end='')
+            satdf.date = datetime.now() # Overwrite with time of match
+            writeMatch('../data/LTTQHitems.h5', satdf)
 
         ############################################################################################
 

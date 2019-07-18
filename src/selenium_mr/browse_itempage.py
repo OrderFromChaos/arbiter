@@ -109,24 +109,29 @@ def browseItempage(browser, item, navigation_time, firstscan=False):
     pagedata = dict()
     if firstscan:
         name = item['Item Name']
-        item_split = name.split(' ')
         pagedata['Item Name'] = name
-        pagedata['Special Type'] = ['None', 'Souvenir'][item_split[0] == 'Souvenir']
+        pagedata['Special Type'] = [0, 1][name.split(' ')[0] == 'Souvenir']
         # TODO: This fails for anything b4 the implementation of item conditions ex:
         # https://steamcommunity.com/market/listings/730/%E2%98%85%20Navaja%20Knife
-        pagedata['Condition'] = name.split('(')[-1][:-1]
+        raw_condition_name =  name.split('(')[-1][:-1]
+        to_num = {
+            'Factory New': 0,
+            'Minimal Wear': 1,
+            'Field-Tested': 2,
+            'Well-Worn': 3,
+            'Battle-Scarred': 4
+        }
+        pagedata['Condition'] = to_num(raw_condition_name)
     else:
         pagedata['Item Name'] = item['Item Name']
         pagedata['Special Type'] = item['Special Type']
         pagedata['Condition'] = item['Condition']
-    
-    pagedata['URL'] = browser.current_url
+
     pagedata['Sales/Day'] = round(len(recent_data)/30, 2)
     pagedata['Buy Rate'] = buy_rate
     pagedata['Date'] = datetime.now()
     pagedata['Sales from last month'] = recent_data
     pagedata['Listings'] = itemized
-    pagedata['Listing IDs'] = IDs
 
     return browser, pagedata
 

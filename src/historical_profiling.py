@@ -18,6 +18,7 @@ for i, row in DBdata.iterrows():
     all_seconds += history
 
 sns.distplot(all_seconds, bins=24, kde=False)
+plt.xlim([0,23])
 plt.xlabel('Hour of day, 0-23')
 plt.ylabel('Volume of sells')
 plt.show()

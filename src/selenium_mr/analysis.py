@@ -256,7 +256,7 @@ def listingPriceFilter(df, price):
     return df[df['Buy Rate'] >= price]
 
 def souvenirFilter(df):
-    return df[df['Special Type'] != 'Souvenir']
+    return df[df['Special Type'] != 1]
 
 def standardFilter(df):
     df = volumeFilter(df, 30)
