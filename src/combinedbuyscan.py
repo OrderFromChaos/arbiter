@@ -22,17 +22,18 @@ import warnings                             # Mute PerformanceWarning during pd.
 ### Local Functions
 from combinedfuncs import getLoginInfo
 from combinedfuncs import selenium_search, json_search
-from selenium_mr.browse_itempage import steamLogin
-from selenium_mr.analysis import filterPrint
+from browse_itempage import steamLogin
+from analysis import filterPrint
+from analysis import standardFilter
 
 ### Hyperparameters {
-selenium_loadtime = 3 # Selenium page loadtime
-json_loadtime = 10.19 # Json page loadtime
-                      # We only need to make 16 requests for CSGO factory new, 
-                      # so we don't currently hit the server-side minute cap (>=20 req/min), 
-                      # but it does seem to ban lower than this speed.
+selenium_loadtime = 2.5 # Selenium page loadtime
+json_loadtime = 10      # Json page loadtime
+                        # We only need to make 16 requests for CSGO factory new, 
+                        # so we don't currently hit the server-side minute cap (>=20 req/min), 
+                        # but it does seem to ban lower than this speed.
 identity = 'Syris'
-verbose = True       # Print data about each item when scanned
+verbose = True          # Print data about each item when scanned
 # Pattern: list of dicts (each of which represent steps) to be cycled over
 #     [MANDATORY] step 'Method' is a function
 #     The rest are optional inputs specific to that 'Method' function
@@ -41,7 +42,7 @@ verbose = True       # Print data about each item when scanned
 pattern = [
     # {
     #     'Method': selenium_search,
-    #     'Pages': 40,
+    #     'Pages': 15,
     #     'Load Time': selenium_loadtime,
     #     'Verbose': verbose
     # }
@@ -49,7 +50,7 @@ pattern = [
         'Method': json_search,
         'Load Time': json_loadtime,
         'Verbose': verbose,
-        'LTTQH Percent': 1.05 # Might as well log everything theoretically profitable and filter in post
+        'LTTQH Percent': 1.15 # Might as well log everything theoretically profitable and filter in post
     }
 ]
 ### }
@@ -87,7 +88,6 @@ class QueueExecuter:
 if __name__ == '__main__':
     # Import dataset, filter to high volume
     DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
-    DBdata = DBdata[DBdata['Sales/Day'] >= 1]
 
     # Login
     browser = webdriver.Chrome()

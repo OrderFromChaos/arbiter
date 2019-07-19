@@ -1,10 +1,10 @@
 import json
 from selenium import webdriver
 import pandas as pd
-from selenium_mr.browse_itempage import WaitUntil       # Implements standard page waits in with block
+from browse_itempage import WaitUntil       # Implements standard page waits in with block
 import time                                 # Waiting so no server-side ban
 from combinedfuncs import getLoginInfo
-from selenium_mr.browse_itempage import steamLogin
+from browse_itempage import steamLogin
 
 ### Hyperparameters {
 navigation_time = 7

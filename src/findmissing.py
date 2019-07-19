@@ -9,9 +9,9 @@ import time                                 # Waiting so no server-side ban
 import json
 
 ### Local Functions
-from selenium_mr.browse_itempage import browseItempage  # Scrapes data from Steam item pages
-from selenium_mr.browse_itempage import WaitUntil       # Implements standard page waits in with block
-from selenium_mr.browse_itempage import steamLogin      # Make code more readable
+from browse_itempage import browseItempage  # Scrapes data from Steam item pages
+from browse_itempage import WaitUntil       # Implements standard page waits in with block
+from browse_itempage import steamLogin      # Make code more readable
 from combinedfuncs import getLoginInfo
 
 ####################################################################################################
