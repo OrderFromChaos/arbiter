@@ -11,6 +11,7 @@ from sty import fg                          # Convenient cross-platform color pr
 
 ### Standard libraries
 import time                                 # Waiting so no server-side ban
+from datetime import datetime               # Used for printing an error message and logging hash overlap
 import json                                 # Metadata read/write
 
 ### Local Functions
@@ -29,27 +30,45 @@ def getLoginInfo(identity):
         data = json.load(f)
     return (data[identity]['Username'], data[identity]['Password'])
 
+def getMetadata(filename):
+    with open(filename,'r') as f:
+        metadata = json.load(f)
+    return metadata
+
+def updateMetaData(filename, update_dict):
+    # Assume metadata file isn't too big, so just do file I/O instead of taking metadata as a param
+    metadata = getMetadata(filename)
+    for key in update_dict:
+        metadata[key] = update_dict[key]
+    with open(filename, 'w') as f:
+        json.dump(metadata, f, indent=4)
+
+def writeMatch(filename, append_df):
+    # matches = pd.read_hdf(filename, 'csgo')
+    # matches = matches.append(append_df, ignore_index = True)
+    matches = append_df
+    matches.to_hdf(filename, 'csgo', mode='w')
+
 ####################################################################################################
 
-def selenium_search(browser, infodict):
+def selenium_search(browser, DBdata, curr_queue, infodict):
     ### Hyperparameters {
     pages_to_scan = infodict['Pages']
     navigation_time = infodict['Load Time']
     verbose = infodict['Verbose']
-    with open('combineddata.json','r') as f:
-        metadata = json.load(f)
-    current_iloc = metadata['current_iloc']
+
+    metadata = getMetadata('combineddata.json')
+    current_iloc = metadata['selenium_iloc']
+    item_base_url = 'https://steamcommunity.com/market/listings/730/'
     ### }
 
-    DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
-    of_interest = DBdata[DBdata['Sales/Day'] >= 1]
     dflength = len(of_interest.index)
 
     for i in range(pages_to_scan):
         item = of_interest.iloc[current_iloc]
         DBdata_index = of_interest.index[current_iloc]
         
-        browser.get(item['URL'])
+        browser.get(item_base_url + item['Item Name'])
         with WaitUntil(navigation_time):
             # Obtains all the page information and throws it into a dict called pagedata
             browser, pagedata = browseItempage(browser, item, navigation_time)
@@ -58,17 +77,18 @@ def selenium_search(browser, infodict):
             DBdata.loc[DBdata_index] = newentry
 
             if pagedata['Listings']: # Nonempty
-                model = LessThanThirdQuartileHistorical(1.15, [2,0])
-                printkeys = model.printkeys
-                satdf = model.run(pd.DataFrame([newentry]))
-                if len(satdf.index) > 0:
-                    print(fg.li_green + '!!!! Found a Q3 satisfying item' + fg.rs)
-                    filterPrint(satdf, keys=printkeys, color=fg.li_green)
+                # TODO: Log this in a different way
+                # model = LessThanThirdQuartileHistorical(1.30, [8,0])
+                # printkeys = model.printkeys
+                # satdf = model.run(pd.DataFrame([newentry]))
+                # if len(satdf.index) > 0:
+                #     print(fg.li_green + '!!!! Found a Q3 satisfying item' + fg.rs)
+                #     filterPrint(satdf, keys=printkeys, color=fg.li_green)
                 if verbose:
-                    print('    ' + str(DBdata.index[DBdata_index]+1) + '.', item['Item Name'], pagedata['Listings'][0], pagedata["Sales/Day"])
+                    print('    ' + str(DBdata_index+1) + '.', item['Item Name'], pagedata['Listings'][0], pagedata["Sales/Day"])
             else:
                 if verbose:
-                    print('    ' + str(DBdata.index[DBdata_index]+1) + '.', item['Item Name'], '[]', pagedata["Sales/Day"])
+                    print('    ' + str(DBdata_index+1) + '.', item['Item Name'], '[]', pagedata["Sales/Day"])
             current_iloc += 1
             if current_iloc >= dflength:
                 print('Index reset!')
@@ -77,107 +97,101 @@ def selenium_search(browser, infodict):
     DBdata.to_hdf('../data/item_info.h5', 'csgo', mode='w')
     if verbose:
         print('    [SELENIUM WROTE TO FILE.]')
-    new_combined_data = metadata
-    new_combined_data['current_iloc'] = current_iloc
-    with open('combineddata.json', 'w') as f:
-        json.dump(new_combined_data, f, indent=4)
     
-    return (browser, [])
+    metadata_update = {
+        'selenium_iloc': current_iloc
+    }
+    updateMetadata('combineddata.json', metadata_update)
+    
+    return (browser, DBdata, curr_queue)
 
-def json_search(browser, infodict):
-    ###########################
-    ### STEP 1: GATHER DATA ###
-    ###########################
+def json_search(browser, DBdata, curr_queue, infodict):
 
     ### Hyperparameters {
     navigation_time = infodict['Load Time']
     verbose = infodict['Verbose']
-    with open('combineddata.json','r') as f:
-        metadata = json.load(f)
+    LTTQH_percent = infodict['LTTQH Percent']
+
+    metadata = getMetadata('combineddata.json')
+    condition = metadata['json_condition']
     ### }
 
     conditions = [0, # Factory New
-                1, # Minimal Wear
-                2, # Field-Tested
-                3, # Well-Worn
-                4] # Battle-Scarred
+                  1, # Minimal Wear
+                  2, # Field-Tested
+                  3, # Well-Worn
+                  4] # Battle-Scarred
 
-    fullres = []
-    for i in conditions:
+    price_query_url = ('https://steamcommunity.com/market/search/render/?category_730_ItemSet&'
+                       'appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory' + str(condition) +
+                       '&count=100&start=') # Can't put count higher, unfortunately
+
+    find_xpath = browser.find_element_by_xpath
+
+    try:
+        browser.get(price_query_url + '0')
+        text = find_xpath('//body').text
+        response = json.loads(text)
+    except json.decoder.JSONDecodeError:
+        # TODO: Implement exponential backoff here
+        print('502 Bad Gateway, waiting longer')
+        time.sleep(navigation_time*5)
+        browser.get(price_query_url + '0')
+        text = find_xpath('//body').text
+        response = json.loads(text)
+    
+    with WaitUntil(navigation_time):
+        try:
+            success = response['success']
+        except TypeError:
+            print('Uh oh, null result. Increase navigation_time. Server cooldown is roughly 5 minutes.')
+            print('Waiting...')
+            time.sleep(60*5)
+            raise Exception('Restart program, please.')
+
         if verbose:
-            print(fg.li_cyan + 'Starting condition ' + str(i) + fg.rs)
-        allquery = ('https://steamcommunity.com/market/search/render/?category_730_ItemSet&'
-                    'appid=730&norender=1&category_730_Exterior%5B%5D=tag_WearCategory' + str(i) +
-                    '&count=100&start=')
+            print(fg(245), end='')
+            print('    Checking out', [condition], '(first 100 method)')
+            # Note that the 100 are ROUGHLY randomized. Not sure if they actually are; it seems like
+            # it might be on a cycle.
+            print(fg.rs, end='')
+        results = response['results']
+        # Cut to relevant data
+        json_name_dict = dict()
+        for res in results:
+            json_name_dict[res['name']] = {
+                'sell_price': round(res['sell_price']/100, 2),
+                'sell_listings_num': res['sell_listings'] # Don't think this is needed
+            }
 
-        firstrun = True
-        all_items_reached = False
-        currloc = 0
-        results = []
-        find_xpath = browser.find_element_by_xpath
-        while not all_items_reached:
-            with WaitUntil(navigation_time):
-                # Get json response using selenium (requests seemed to be more prone to breaking)
-                try:
-                    browser.get(allquery + str(currloc))
-                    text = find_xpath('//body').text
-                    response = json.loads(text)
-                except json.decoder.JSONDecodeError:
-                    print('502 Bad Gateway, waiting longer')
-                    time.sleep(navigation_time*5)
-                    browser.get(allquery + str(currloc))
-                    text = find_xpath('//body').text
-                    response = json.loads(text)
-                try:
-                    success = response['success']
-                except TypeError:
-                    print('Uh oh, null result. Reduce navigation_time. TODO: Implement a 5.05 minute cooldown here.')
-                    raise Exception
-                
-                if verbose:
-                    print(fg(245) + 'Got json at: ' + str(currloc) + fg.rs)
-                results += response['results']
+        ############################################################################################
 
-                # If first run, get total number of expected items
-                if firstrun:
-                    size = response['total_count']
-                    firstrun = False
-                
-                # Loop breaking logic based on expected item count
-                currloc += 100
-                if currloc > size:
-                    break
+        filteredDBdata = DBdata[DBdata['Item Name'].isin(json_name_dict)]
+        def convertListings(row):
+            row['Listings'] = (json_name_dict[row['Item Name']]['sell_price'],)
+            return row
+        filteredDBdata = filteredDBdata.apply(convertListings, axis=1)
+        satdf = LessThanThirdQuartileHistorical(LTTQH_percent, [8,0]).run(filteredDBdata)
+        if len(satdf.index) > 0:
+            satdf = satdf.sort_values('Ratio', ascending=False)
+            print(fg.li_green, end='')
+            filterPrint(satdf, printval=50, keys=['Item Name', 'Buy Rate', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio'])
+            print(fg.rs, end='')
+            satdf.date = datetime.now() # Overwrite with time of match
+            writeMatch('../data/LTTQHitems.h5', satdf)
 
-        for i, item in enumerate(results):
-            results[i] = {'name': item['name'],
-                          'sell_price': item['sell_price'],
-                          'sell_listings': item['sell_listings']}
-        fullres += results
+        ############################################################################################
 
-    JSONdata = pd.DataFrame(fullres)
-
-    # For logging; next step uses the 'data' variable
-    JSONdata.to_hdf('../data/global_pricing.h5', 'csgo', mode='w')
-
-    ############################################
-    ### STEP 2: SEARCH FOR BUY OPPORTUNITIES ###
-    ############################################
-
-    DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
-    # Filter to DBdata item names that are in JSONdata
-    new_price_dict = {row['name']:row['sell_price'] for i, row in JSONdata.iterrows()}
-    DBdata = DBdata[DBdata['Item Name'].isin(new_price_dict)]
-    def convertListings(row):
-        row['Listings'] = (round(new_price_dict[row['Item Name']]/100,2),)
-        return row
-
-    DBdata = DBdata.apply(convertListings, axis=1)
-
-    satdf = LessThanThirdQuartileHistorical(1.15, [2,0]).run(DBdata)
-    if len(satdf.index) > 0:
-        final_results = satdf
-        final_results.sort_values('Ratio', ascending=False)
-    else:
-        final_results = []
-
-    return (browser, final_results)
+        # Update condition and condition_loc
+        size = response['total_count']
+        condition_num = conditions.index(condition)
+        if condition_num == len(conditions) - 1:
+            metadata_update = {
+                'json_condition': 0
+            }
+        else:
+            metadata_update = {
+                'json_condition': conditions[condition_num+1],
+            }
+        updateMetaData('combineddata.json', metadata_update)
+    return (browser, DBdata, curr_queue)

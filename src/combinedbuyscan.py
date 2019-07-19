@@ -11,13 +11,13 @@
 
 ### External libraries
 from selenium import webdriver              # Web navigation
-import pandas as pd                         # Dataset format
-from sty import fg                          # Color printing
+import pandas as pd                         # Primary dataset format
+from sty import fg                          # Color stdout printing
 
 ### Standard libraries
-from itertools import cycle                 # Specify a pattern to repeat forever
-from copy import deepcopy                   # Python object reference refers to mem locations
-import warnings                             # Our data storage method produces a PerformanceWarning
+from collections import deque               # Flexible structure for reacting to incoming information
+from copy import deepcopy                   # Working around how Python does references
+import warnings                             # Mute PerformanceWarning during pd.to_hdf
 
 ### Local Functions
 from combinedfuncs import getLoginInfo
@@ -26,29 +26,30 @@ from selenium_mr.browse_itempage import steamLogin
 from selenium_mr.analysis import filterPrint
 
 ### Hyperparameters {
-selenium_loadtime = 2 # Selenium page loadtime
-json_loadtime = 6     # Json page loadtime
+selenium_loadtime = 3 # Selenium page loadtime
+json_loadtime = 10.19 # Json page loadtime
                       # We only need to make 16 requests for CSGO factory new, 
                       # so we don't currently hit the server-side minute cap (>=20 req/min), 
                       # but it does seem to ban lower than this speed.
 identity = 'Syris'
-verbose = True        # Print data about each item when scanned
+verbose = True       # Print data about each item when scanned
 # Pattern: list of dicts (each of which represent steps) to be cycled over
-#     [MANDATORY] step 'Method' is assumed to be a function in the current global namespace
-#     The rest are optional inputs specific to that method function
+#     [MANDATORY] step 'Method' is a function
+#     The rest are optional inputs specific to that 'Method' function
 # Implementation detail: make sure the wait happens at the end of the function; this will allow
 #     methods to overlap nicely.
 pattern = [
     # {
-    #     'Method': 'selenium_search',
-    #     'Pages': 20,
+    #     'Method': selenium_search,
+    #     'Pages': 40,
     #     'Load Time': selenium_loadtime,
     #     'Verbose': verbose
-    # },
+    # }
     {
-        'Method': 'json_search',
+        'Method': json_search,
         'Load Time': json_loadtime,
-        'Verbose': verbose
+        'Verbose': verbose,
+        'LTTQH Percent': 1.05 # Might as well log everything theoretically profitable and filter in post
     }
 ]
 ### }
@@ -57,28 +58,36 @@ warnings.simplefilter('ignore') # Not best practice, but wasn't sure how to make
 
 ####################################################################################################
 
-class PatternExecuter:
-    def __init__(self, pattern):
-        self.pattern = pattern
-        self.step = pattern.__next__()
+class QueueExecuter:
+    def __init__(self, curr_queue, DBdata):
+        self.base_queue = deepcopy(curr_queue)
+        self.curr_queue = curr_queue
+        self.step = self.curr_queue.popleft()
+        self.DBdata = DBdata
     def run(self, browser_obj):
         print(self.step)
-        fxn = globals()[self.step['Method']]
-        infodict = deepcopy(self.step)
+        infodict = self.step
+        fxn = deepcopy(infodict['Method'])
         del infodict['Method']
+
         if infodict: # Nonempty
-            browser_obj, buyrecs = fxn(browser_obj, infodict)
+            browser_obj, self.DBdata, self.curr_queue = fxn(browser_obj, self.DBdata, self.curr_queue, infodict)
         else:
-            browser_obj, buyrecs = fxn(browser_obj)
-        self.step = pattern.__next__()
-        return browser_obj, buyrecs
+            browser_obj, self.DBdata, self.curr_queue = fxn(browser_obj, self.DBdata, self.curr_queue)
+        
+        if len(self.curr_queue) == 0:
+            self.curr_queue = deepcopy(self.base_queue)
+            self.step = self.curr_queue.popleft()
+        else:
+            self.step = self.curr_queue.popleft()
+        return browser_obj
 
 ####################################################################################################
 
 if __name__ == '__main__':
     # Import dataset, filter to high volume
     DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
-    of_interest = DBdata[DBdata['Sales/Day'] >= 1]
+    DBdata = DBdata[DBdata['Sales/Day'] >= 1]
 
     # Login
     browser = webdriver.Chrome()
@@ -86,14 +95,8 @@ if __name__ == '__main__':
     browser = steamLogin(browser, username, password, selenium_loadtime)
 
     # Set pattern to repeat
-    pattern = cycle(pattern)
+    base_queue = deque(pattern)
 
-    executer = PatternExecuter(pattern)
+    executer = QueueExecuter(base_queue, DBdata)
     while True:
-        browser, buyrecs = executer.run(browser)
-        if isinstance(buyrecs, list):
-            pass
-        else:
-            print(fg.li_green)
-            filterPrint(buyrecs, printval=50, keys=['Item Name', 'Buy Rate', 'Sales/Day', 'Lowest Listing', 'Q3'])
-            print(fg.rs)
+        browser = executer.run(browser)
