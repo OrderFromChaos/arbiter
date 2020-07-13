@@ -4,7 +4,8 @@
 
 ### External Libraries
 from selenium import webdriver              # Primary navigation of Steam price data.
-from selenium.common.exceptions import NoSuchElementException 
+from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import StaleElementReferenceException
                                             # ^^ Dealing with page load failure.
 import pandas as pd                         # Primary dataset format
 from sty import fg                          # Convenient cross-platform color printing
@@ -15,13 +16,11 @@ from datetime import datetime               # Used for printing an error message
 import json                                 # Metadata read/write
 
 ### Local Functions
-from selenium_mr.analysis import filterPrint            # Pretty printing by info in dict
-from selenium_mr.analysis import historicalDateFilter   # Filter before doing quartiles
-from selenium_mr.analysis import volumeFilter           # Ensure quartileHistorical runs without bugs
-from selenium_mr.analysis import quartileHistorical     # Buy checks in json_search
-from selenium_mr.analysis import LessThanThirdQuartileHistorical # Alerts during selenium_search
-from selenium_mr.browse_itempage import browseItempage  # Scrapes data from Steam item pages
-from selenium_mr.browse_itempage import WaitUntil       # Implements standard page waits in with block
+from analysis import filterPrint            # Pretty printing by info in dict
+from analysis import LessThanThirdQuartileHistorical # Alerts during selenium_search
+from analysis import standardFilter         # These are the only items that matter
+from browse_itempage import browseItempage  # Scrapes data from Steam item pages
+from browse_itempage import WaitUntil       # Implements standard page waits in with block
 
 ####################################################################################################
 
@@ -35,7 +34,7 @@ def getMetadata(filename):
         metadata = json.load(f)
     return metadata
 
-def updateMetaData(filename, update_dict):
+def updateMetadata(filename, update_dict):
     # Assume metadata file isn't too big, so just do file I/O instead of taking metadata as a param
     metadata = getMetadata(filename)
     for key in update_dict:
@@ -44,10 +43,19 @@ def updateMetaData(filename, update_dict):
         json.dump(metadata, f, indent=4)
 
 def writeMatch(filename, append_df):
-    # matches = pd.read_hdf(filename, 'csgo')
-    # matches = matches.append(append_df, ignore_index = True)
-    matches = append_df
+    matches = pd.read_hdf(filename, 'csgo')
+    matches = matches.append(append_df, ignore_index = True)
     matches.to_hdf(filename, 'csgo', mode='w')
+
+class Timer():
+    def __init__(self):
+        self.start = 0
+    def __enter__(self):
+        self.start = time.time()
+        return self.start
+    def __exit__(self, *args):
+        elapsed = time.time() - self.start
+        print('Time elapsed:', elapsed)
 
 ####################################################################################################
 
@@ -62,6 +70,9 @@ def selenium_search(browser, DBdata, curr_queue, infodict):
     item_base_url = 'https://steamcommunity.com/market/listings/730/'
     ### }
 
+    # IT'S VERY IMPORTANT THAT FILTERING HAPPENS HERE.
+    # If it happens earlier, DBdata is written as the filtered version, which causes dataset loss.
+    of_interest = standardFilter(DBdata)
     dflength = len(of_interest.index)
 
     for i in range(pages_to_scan):
@@ -71,7 +82,11 @@ def selenium_search(browser, DBdata, curr_queue, infodict):
         browser.get(item_base_url + item['Item Name'])
         with WaitUntil(navigation_time):
             # Obtains all the page information and throws it into a dict called pagedata
-            browser, pagedata = browseItempage(browser, item, navigation_time)
+            try:
+                browser, pagedata = browseItempage(browser, item, navigation_time)
+            except StaleElementReferenceException: # Not entirely sure why this happens
+                browser.get(browser.current_url)
+                browser, pagedata = browseItempage(browser, item, navigation_time)
 
             newentry = pd.Series(pagedata)
             DBdata.loc[DBdata_index] = newentry
@@ -193,5 +208,5 @@ def json_search(browser, DBdata, curr_queue, infodict):
             metadata_update = {
                 'json_condition': conditions[condition_num+1],
             }
-        updateMetaData('combineddata.json', metadata_update)
+        updateMetadata('combineddata.json', metadata_update)
     return (browser, DBdata, curr_queue)

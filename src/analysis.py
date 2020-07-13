@@ -7,22 +7,16 @@
 ### 1. A source for buying/selling strategies to be slotted into other programs and
 ### 2. When run as itself, the ability to test and backtest strategies during development.
 
-# TODO: There are some hardcoded 1.15s for convenience sake while coding; these should be removed
-#       with vars like self.percentage.
-
 import pandas as pd                         # Dataset format
 import matplotlib.pyplot as plt             # Graphing backtest outputs
-import seaborn as sns
+import seaborn as sns                       # Nicer plots
 import numpy as np
-import scipy.optimize                       # Finding highest profit strategy
+from scipy.stats import binned_statistic    
 from datetime import datetime, timedelta    # Volumetric sale filtering based on date
-from math import floor, ceil                # Data analysis use in medians
-from copy import deepcopy                   # Needed for some reference passing
+from math import ceil                       # Data analysis use in medians
+from copy import deepcopy                   # Working around Python's habit of shallow copies
 from sty import fg                          # Cross-platform color printing
-
-# Print settings
-pd.options.display.width = 0
-pd.set_option('display.max_columns', 7)
+import statistics                           # Convenience
 
 def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day'], color=None):
     if printtype == 'head':
@@ -47,74 +41,89 @@ class BackTesterV2:
     # Assumptions:
     #    1. Ignore market updates based on your price listings. This is imperfect
     #       (you're part of the market), but I have no idea how to account for this.
+    #    2. Perfect information on the purchasing side. I know I have imperfect information on sell,
+    #       so the algorithm sells only at the recommend price (eg Q3) instead of the actual higher
+    #       real sell. The reasoning is that this shows there is an economic market for high prices.
+    #       This could be spurious, since it would auto-sell on a weird spike, but it's an alright
+    #       approximation. TODO: See how heavily pushing this down would affect the algorithm.
     # 
-    # Ideally, this can later be thrown into a profit-maximizing optimization algorithm,
-    #     so we can use the "best" strategy according to backtesting.
+    # Later, this can be thrown into a profit-maximizing optimization algorithm,
+    #     so we can use the "best" strategy according to backtesting. However, I feel like given the
+    #     numerous potential pitfalls, it is best to work using graphs and human analysis.
     def __init__(self, strategy, testregion, liquidation_force_days, inputs=None, usefallbackmethod=False):
         # "strategy" is a class with an implemented .runBacktest() function which returns
-        #     recommended buys and recommended sell/fallback prices. This class takes care of the rest, 
-        #     like sells and max portfolio holds.
+        #     recommended buys and recommended sell/fallback prices. This class takes care of the
+        #     selling process.
         # "testregion" is a two-len list with [startdate, enddate]. These dates can be a mix of
         #     integers (floor(today) - X days ago, where X is the int) or datetime objects.
         # "liquidation_force_days" tells the algorithm how to liquidate buys. After
-        #     purchase but before buy_date + liquidation_force_days, the algo with attempt to sell at
+        #     purchase, but before buy_date + liquidation_force_days, the algo with attempt to sell at
         #     the strategy-recommended sell price. If there is a sell above this pricing, it will sell
         #     at the recommended price anyway (just shows that consumer willingness was there).
         #     After buy_date + liquidation_force_days, algo will attempt to sell at fallback price for
         #     remainder of history.
-        # "inputs" is for inputs to the functions, like 1.15x pricing
+        # "inputs" is for inputs to the functions, like the 15% Steam cut
         # "usefallbackmethod" tells the backtester whether to use sell fallback price or sell fallback
-        #     method. Method is by fiat more intelligent
+        #     method. "true" is by fiat more reactive to pricing shifts and almost always better.
         self.strategy = strategy
         self.testregion = testregion
         self.liquidation_force_days = liquidation_force_days
         self.inputs = inputs
         self.usefallbackmethod = usefallbackmethod
-
-        # Will eventually be a list of {'buy date': , 'sell recommend': , 'sell fallback': }
+        # Will eventually be a list of 
+        # [{'Buy Date': , 'Recommended Sell': , 'Fallback Sell': }
+        #   , ...]
         self.purchases = []
-    def runBacktest(self, verbose=True):
-        global DBdata
-        # First, get purchases from your strategy over the region you selected.
-        # This is where you have to use deepcopies.
+    def runBacktest(self, DBdata, verbose=True):
+        # First, obtain purchases.
         if verbose:
             print('Backtesting [{0}]...'.format(self.strategy.__name__))
         sacrificial_testregion = deepcopy(self.testregion)
+        # historicalSelectorDF modifies DBdata historical to be over the testregion
         sacrificial_DBdata = deepcopy(DBdata) 
         test_samples = historicalSelectorDF(sacrificial_DBdata, sacrificial_testregion)
 
         self.strategy = self.strategy(*self.inputs)
         if verbose:
             print('Generating purchases over testregion...')
-        sacrificial_DBdata = deepcopy(DBdata) # This deepcopy to keep it for later liquidation
+        # runBacktestV2 modifies DBdata historical to be after the testregion
+        sacrificial_DBdata = deepcopy(DBdata)
         self.purchases = self.strategy.runBacktestV2(sacrificial_DBdata, test_samples, self.testregion)
+        # Note that the format of self.purchases is:
+        # {
+        #     "Name": "Some Item (Factory New)",
+        #     // Some metadata about that item here
+        #     "Purchases": {
+        #         "Name": "Some Item (Factory New)",
+        #         "Buy Date": ...,
+        #         "Buy Price": ...,
+        #         "Recommended Sell": ...,
+        #         "Fallback Sell": ...,
+        #         "Fallback Method": ...
+        #     }
+        # }
+        # Name is redundant, but some inner loops use that information, so it's probably best to just
+        # pass it along. TODO: Remove this redundancy.
 
-        # Now take these purchases and carry out liquidation sells
-        # Note that if you hold eg. 5 of an item, you permanently remove one of the possible sell
-        #     maxes, so you have to sell for a lower price
-        # (Unsurprisingly, this greatly increases complexity)
+        # Now, sell your inventory.
+        # Note that if you hold eg. 5 of an item, you permanently remove one of the possible sells.
+        # (Unsurprisingly, this increases implementation complexity)
         if verbose:
             print('Number of purchases:', sum([len(x['Purchases']) for x in self.purchases]))
             print('Running liquidation sell process...')
 
-        # Purchase output is not pandas since it's nested and too complicated to get any gain from
-        # not using dicts
-
-        # PHASE 1: Attempt to sell at recommended price during sell region
         nametoindex = {x['Item Name']: i for i, x in DBdata.iterrows()}
-        phase1sell = [] # Sold during first period at recommended sell
-        phase2sell = [] # Sold during second period at fallback sell
+        phase1sell = [] # Sold at recommended sell
+        phase2sell = [] # Sold at fallback sell
         phase3sell = [] # Never sold
-        for unique_name in self.purchases: # For each unique item name
+        for unique_name in self.purchases:
             firstrun = True
             relevant_history = DBdata.loc[nametoindex[unique_name['Name']]]['Sales from last month']
 
             for i, p in enumerate(unique_name['Purchases']): # For each purchase under that item name
-                # To prevent multiple sells, I use a rolling window of history which deletes sells
-                # when they happen.
+                # The following code uses a rolling window sell region to avoid repeated sells.
                 ### Sell Window Updating {
-                if firstrun:
-                    # Initialize rolling window
+                if firstrun: # Initialize rolling window
                     phase1bounds = [p['Buy Date'], p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
                     phase1region = historicalSelector(relevant_history, phase1bounds)
                     phase2bounds = [phase1bounds[1], unique_name['Date Pulled']]
@@ -123,21 +132,19 @@ class BackTesterV2:
                     # Remove old left region; sell dates should be +0 or increasing
                     phase1region = [x for x in phase1region if x > p['Buy Date']]
                     phase2region = [x for x in phase2region if x > p['Buy Date']]
+
                     # Add new rightmost region (only for phase1region; phase2region extends to end)
-                    previous_end = (unique_name['Purchases'][i-1]['Date'] + 
-                                    timedelta(days=self.liquidation_force_days))
+                    previous_end = (unique_name['Purchases'][i-1]['Date'] + timedelta(days=self.liquidation_force_days))
                     if previous_end > p['Buy Date']:
-                        rightaddition = [previousend,
-                                         p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
+                        rightaddition = [previousend, p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
                     else:
-                        rightaddition = [p['Buy Date'],
-                                            p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
+                        rightaddition = [p['Buy Date'], p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
                     phase1region += historicalSelector(relevant_history, rightaddition)
-                p['Regions'] = (phase1bounds, phase2bounds)
+                p['Regions'] = (phase1bounds, phase2bounds) # Used during graphical analysis of backtest
                 ### Sell Window Updating }
                 
-                ### Find sells {
-                while True: # Enforces phase1, then phase2, then phase3 logic
+                ### Actual selling {
+                while True: # Enforces recommended sell -> fallback sell logic
                     # Phase 1 checks
                     soldphase1 = False
                     for index, historicalsell in enumerate(phase1region):
@@ -155,8 +162,7 @@ class BackTesterV2:
                     soldphase2 = False
                     if self.usefallbackmethod: # Use the intelligent re-estimate function passed along
                         fxn = p['Fallback Method']
-                        # This is not particularly generalizable at the moment; figure out a new method
-                        price_estimate = fxn(relevant_history, phase1bounds)
+                        price_estimate = fxn(relevant_history, phase1bounds, p)
                     else: # Go based on the less intelligent estimated fallback price
                         price_estimate = p['Fallback Sell']
                     
@@ -175,28 +181,18 @@ class BackTesterV2:
                         # Neither conditions satisfied, so append to phase3sell
                         phase3sell.append(p)
                         break
-        
-        print('Finished figuring out sales! Sending sells to analysis...')
+        if verbose:
+            print('Finished figuring out sales! Sending sells to analysis...')
 
         return (self.purchases, (phase1sell, phase2sell, phase3sell))
 
-class CurrTester:
-    def __init__(self, strategy):
-        self.strategy = strategy
-        self.satdf = None
-    def runCurrtest(self):
-        # Calls the strategy's "run" function to get the dataframe that satisfies the strategy
-        global DBdata
-        self.satdf = self.strategy.run(DBdata)
-
 def basicTest(strategy, inputs=None):
     if inputs:
-        currtest = CurrTester(strategy(*inputs))
+        strategy = strategy(*inputs)
     else:
-        currtest = CurrTester(strategy)
-    currtest.runCurrtest()
-    satdf = currtest.satdf
-    printkeys = currtest.strategy.printkeys
+        strategy = strategy()
+    satdf = strategy.run(DBdata)
+    printkeys = strategy.printkeys
     print('Number that satisfy', strategy.__name__ + ':', len(satdf.index))
     return satdf, printkeys
 
@@ -288,25 +284,20 @@ def historicalSelectorDF(df, dateregion):
                                                                     dateregion=dateregion)
     return df
 
-def historicalDateFilter(df, ndays):
-    df = historicalSelectorDF(df, [ndays, 0])
-    return df
-
-def removeHistoricalOutliers(df, sigma):
+def removeHistoricalOutliers(L, sigma=1):
     # Filter all data points that are greater than sigma away from the mean
-    for i, row in DBdata.iterrows():
-        historical = row['Sales from last month']
-        historical_nums = [x[1] for x in historical]
-        mean = sum(historical_nums)/len(historical_nums)
-        stdev = (sum([(x-mean)**2 for x in historical_nums])/len(historical_nums))**0.5
-        DBdata.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
-    return DBdata
+    historical_nums = [x[1] for x in L]
+    mean = statistics.mean(historical_nums)
+    stdev = statistics.stdev(historical_nums)
+    finL = [x for x in L if abs((x[1]-mean)/stdev) <= sigma]
+    return finL
 
 ########################
 
 
 ### ACTUAL STRATEGY ###
 
+# DO NOT USE FOR BACKTESTING; NO POSSIBLE RUNBACKTEST FUNCTION
 class SimpleListingProfit:
     def __init__(self, percentage):
         self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
@@ -330,8 +321,7 @@ class SimpleListingProfit:
 
 class LessThanThirdQuartileHistorical:
     def __init__(self, percentage, dateregion):
-        self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
-                                     # For CS:GO, this is 15%
+        self.percentage = percentage # percent less than Q3 before a buy will trigger.
         self.dateregion = dateregion
         self.printkeys = ['Item Name', 'Date', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio']
     
@@ -345,6 +335,8 @@ class LessThanThirdQuartileHistorical:
         satdf = volumeFilter(satdf, 60) # Make quartiles more meaningful
         satdf = historicalSelectorDF(satdf, dateregion)
         satdf = volumeFilter(satdf, 3)
+        satdf['Sales from last month'] = satdf['Sales from last month'].apply(removeHistoricalOutliers, sigma=1.5)
+        satdf = volumeFilter(satdf, 5)
 
         details = satdf['Sales from last month'].apply(quartileHistorical)
         details = pd.DataFrame(details.tolist(), index=details.index, columns=['Q1','Q2','Q3'])
@@ -356,43 +348,33 @@ class LessThanThirdQuartileHistorical:
 
         lowest_listings = pd.DataFrame(data={'Lowest Listing': satdf['Listings'].apply(lambda L: L[0])})
         satdf = satdf.join(lowest_listings)
-        # satdf = satdf[satdf['Lowest Listing'] < satdf['Q1']]
         satdf = satdf[satdf['Lowest Listing']*(self.percentage + .01) < satdf['Q3']]
 
         details = pd.DataFrame(satdf['Q3']/satdf['Lowest Listing'], columns=['Ratio'])
         satdf = satdf.join(details)
         satdf['Ratio'] = satdf['Ratio'].apply(lambda x: round(x,2))
 
-        # TODO: Implement days to profit into models
-        #     itemdict['Days To Profit'] = round(1/(item['Sales/Day']/4),2)
-        #     # ^^ x/4 because 1/4th chance to appear at or above Q3
-        #     itemdict['Profit'] = round(Q3-itemdict['Lowest Listing']*1.15,2)
-        #     itemdict['Profit/Day'] = round(itemdict['Profit']*item['Sales/Day']/4,2)
-        #     return itemdict
         return satdf
     
     def runBacktestV2(self, df, test_samples, test_region):
-        # 'test_samples' is a dataframe where everything in 'Sales from last month' are buy prices 
-        #     to check for that item
-        # 'test_region' tells you were to measure quartiles from
+        # 'test_samples' is DBdata, but 'Sales from last month' is filtered to the buy region
+        # 'test_region' is the boundaries of the historical region to check quartiles over
 
         satdf = self.prepare(df, dateregion=[test_region[0] + (self.dateregion[0]-self.dateregion[1]), test_region[0]])
         purchases = []
 
-        # Algorithm, in short:
-        # for each item in df
-        #     check each item in test_samples
-        #     if satisfied, log as buy
-        # return buy list
-
-        def fallbackPricing(fullhistory, phase1bounds):
+        def fallbackPricing(fullhistory, phase1bounds, purchase_data):
             # phase1bounds = [p['Buy Date'], p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
             # phase1region = historicalSelector(relevant_history, phase1bounds)
             phase1bounds = deepcopy(phase1bounds)
             phase1bounds[0] -= timedelta(days=2) # Increase window size on the left
             newregion = historicalSelector(fullhistory, phase1bounds)
-            Q1, Q2, Q3 = quartileHistorical(newregion)
-            return Q3
+            if len(newregion) >= 3:
+                Q1, Q2, Q3 = quartileHistorical(newregion)
+                return Q3
+            else:
+                # Cannot find quartiles with this few data points, so use old fallback sell instead
+                return purchase_data['Fallback Sell']
 
         for index, historical_row in satdf.iterrows():
             test_row = test_samples.loc[index]
@@ -419,100 +401,49 @@ class LessThanThirdQuartileHistorical:
 
         return purchases
 
-class SpringSearch:
-    # Items whose historical data Q1 and Q3 differ by more than a given percentage
-    def __init__(self, percentage, numdays=2):
-        self.percentage = percentage # Steam % cut on Marketplace purchases for that game. 
-                                     # For CS:GO, this is 15%
-        self.numdays = numdays
-        self.printkeys = ['Item Name', 'Date', 'Buy Rate', 'Sales/Day', 'Ratio']
-    
-    def run(self, df):
-        satdf = standardFilter(df)
-        satdf = volumeFilter(satdf, 80)
-        satdf = historicalDateFilter(satdf, self.numdays)
-        satdf = volumeFilter(satdf, 3)
-
-        details = satdf['Sales from last month'].apply(quartileHistorical)
-        details = pd.DataFrame(details.tolist(), index=details.index, columns=['Q1','Q2','Q3'])
-        satdf = satdf.join(details)
-
-        satdf = satdf[satdf['Q1']*(self.percentage) < satdf['Q3']]
-        satdf = satdf[satdf['Q1'] > satdf['Buy Rate']]
-
-        details = pd.DataFrame(satdf['Q3']/satdf['Q1'], columns=['Ratio'])
-        satdf = satdf.join(details)
-        satdf['Ratio'] = satdf['Ratio'].apply(lambda x: round(x,2))
-        # satdf = satdf[satdf['Q1'].apply(lambda q: q < 144.77)] # Account balance restriction
-        return satdf
-
 #######################
 
 if __name__ == '__main__':
     print('Doing inital dataset import...')
-    DBdata = pd.read_hdf('../../data/item_info.h5', 'csgo')
+    DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
     print('Successful import! Number of entries:', len(DBdata.index))
     DBdata = standardFilter(DBdata)
-    print('Number that satisfy volume and souvenir filters:', len(DBdata.index))
-    # print()
-
-    # # Testing SimpleListingProfit
-    # SLPsat, printkeys = basicTest(SimpleListingProfit,inputs=[1.15])
-    # SLPsat = SLPsat.sort_values('Ratio', ascending=False)
-    # filterPrint(SLPsat, keys=printkeys)
-    # print()
+    print('Number that satisfy volume, souvenir, and price filters:', len(DBdata.index))
 
     # # Testing LessThanThirdQuartileHistorical
     # LTTQHsat, printkeys = basicTest(LessThanThirdQuartileHistorical, inputs=[1.15, [8,0]])
     # LTTQHsat = LTTQHsat.sort_values('Ratio', ascending=False)
     # filterPrint(LTTQHsat, keys=printkeys)
-    # # TODO: Implement writing to file
-    # # DBchange([x for x in DBdata if LessThanThirdQuartileHistorical.runindividual(x)['Satisfied']], 
-    # #          'add',
-    # #          '../../data/LTTQHitems.txt')
     # print()
-
-    # # Testing SpringSearch
-    # SSsat, printkeys = basicTest(SpringSearch, inputs=[1.15])
-    # SSsat = SSsat.sort_values('Ratio', ascending=False)
-    # filterPrint(SSsat, keys=printkeys)
-    # print()
-
-    # TODO: Implement profit guesses
-    # print('Average daily profit at perfect information/liquidity:', round(sum([x['Profit/Day'] for x in SSsatresults]),2))
-    # portfolio_size = 100
-    # # print('Highest profit at',portfolio_size)
 
     # BacktesterV2: (historical buy region L, R), days of rec. sell, [function hyperparams, ...]  
     hmeta = ([5,4], 2)
     tester = BackTesterV2(LessThanThirdQuartileHistorical, hmeta[0], hmeta[1], 
-                          inputs=[1.25, [8,0]], usefallbackmethod=True)
-    purchases, phasesells = tester.runBacktest()
+                          inputs=[1.23, [8,0]], usefallbackmethod=True)
+    purchases, phasesells = tester.runBacktest(DBdata)
     phase1sell, phase2sell, phase3sell = phasesells
     print('Never sold items:')
     print([p['Name'] for p in phase3sell])
 
-    def profitAnalysisV2(phase1sell, phase2sell, phase3sell, historical_metadata):
+    def profitAnalysisV2(phase1sell, phase2sell, phase3sell, historical_metadata, DBdata):
         # historical_metadata: ((5,4), 2)
-        # in other words, it needs the test region and liquidation_force_sell
-        global DBdata
+        # The holding stats part of the code needs the test region and liquidation_force_sell
 
-        ### Calculate and print summary statistics
         # Basic stats
         actually_sold = phase1sell + phase2sell
         all_profits = [x['Profit'] for x in actually_sold]
         positive_profits = sum([x for x in all_profits if x > 0])
-        negative_profits = sum([x for x in all_profits if x < 0]) - sum([x['Buy Price'] for x in phase3sell])
+        negative_profits = sum([x for x in all_profits if x < 0]) - sum([x['Buy Price']-x['Buy Price']/(1.15**2) for x in phase3sell])
         net = positive_profits + negative_profits
+
         # Holding stats
         # Goal: iterate over each available hour. Sum over currently active buys (inclusive) to
         #       see current portfolio usage. This allows us to keep track of max inventory size and
         #       max money input.
         #       Generate a graph with this data. Output max holding.
         # Region is different for every item, so must use the stored item buy and sell date
-        # First, histogram the holding times
         holding_time = [(x['Sell Date'] - x['Buy Date']).total_seconds()//3600 for x in actually_sold]  # in hrs
-        bins = int(max(holding_time))
+        hourly_bins = int(max(holding_time))
         # Then, figure out portfolio holdings
         all_buys = phase1sell + phase2sell + phase3sell
         mindate = min([x['Regions'][0][0] for x in all_buys])
@@ -526,14 +457,9 @@ if __name__ == '__main__':
         portfolio_size = [0]*(expected_hours+1)
         num_held = deepcopy(portfolio_size) # Lazy/10
         for p in all_buys:
-            # Have to convert to relative holding regions
             has_sale = False
             buy_date = p['Buy Date']
-            # relative_buy = ((p['Buy Date'] - sell_start).total_seconds()/
-            #                                   (final_sell - sell_start).total_seconds())
             if 'Sell Date' in p:
-                # relative_sell = ((p['Sell Date'] - sell_start).total_seconds()/
-                #                                    (final_sell - sell_start).total_seconds())
                 has_sale = True
                 sell_date = p['Sell Date']
             buy_price = p['Buy Price']
@@ -560,11 +486,14 @@ if __name__ == '__main__':
         print('Longest time to sale (hours):', max(holding_time))
         print('Maximum portfolio $$$:', cround(max(portfolio_size)))
         print('Highest holding number:', max(num_held))
-        sns.distplot(holding_time, bins=bins+1, kde=False)
+
+        # Histogram: time to sale
+        sns.distplot(holding_time, bins=hourly_bins+1, kde=False)
         plt.xlabel('Hours to sale')
         plt.ylabel('Volume of item sales')
         plt.show()
 
+        # Plot: portfolio over time, in $ and quantity
         plt.plot(portfolio_size, color='blue', label='$$$ in portfolio')
         plt.plot(num_held, color='red', label='Number of items in inventory')
         plt.axvline(end_of_buys)
@@ -576,7 +505,20 @@ if __name__ == '__main__':
         plt.legend(['$$$ in portfolio', 'Number of items in inventory'], loc='upper right')
         plt.show()
 
-        plt.scatter(x=[p['Recommended Sell']/p['Buy Price'] for p in actually_sold], y=[p['Profit']/p['Buy Price'] for p in actually_sold])
+        # Plot: average return % at each initial Q3/Buy % (lower Q3/Buy is usually worse)
+        buy_ratios = [int(round(p['Recommended Sell']/p['Buy Price'], 2)*100) for p in actually_sold]
+        low_buy = min(buy_ratios)
+        high_buy = max(buy_ratios)
+        profit_ratios = [int(round(p['Profit']/p['Buy Price'], 2)*100) for p in actually_sold]
+        bins = high_buy-low_buy
+        stats, bin_edges, numbins = binned_statistic(buy_ratios, profit_ratios, statistic='mean', bins=bins)
+        # print(stats)
+        # stats[np.isnan(stats)] = 0
+        # plt.bar(bin_edges[:-1], stats, width=1, align='edge')
+        # plt.show()
+
+        # Scatter: 
+        plt.scatter(x=[p['Recommended Sell']/p['Buy Price'] for p in actually_sold], y=[p['Profit']/p['Buy Price']*100 for p in actually_sold])
         # plt.xlim([1,2.5])
         # plt.ylim([-5,5])
         # plt.axvline(1.30, c='k')
@@ -588,12 +530,10 @@ if __name__ == '__main__':
         # plt.axvline(1.40, c='k')
         # plt.axvline(1.50, c='k')
         plt.xlabel('Ratio Q3/Buy')
-        plt.ylabel('Actual Profit/Buy')
+        plt.ylabel('Actual Profit (% above break even)')
         plt.show()
 
-    profitAnalysisV2(phase1sell, phase2sell, phase3sell, hmeta)
-
-    # TODO: Make a histogram of profit recommendations
+    profitAnalysisV2(phase1sell, phase2sell, phase3sell, hmeta, DBdata)
 
     # print('Testing for optimal strategy on given timescale...')
 

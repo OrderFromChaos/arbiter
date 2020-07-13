@@ -1,6 +1,6 @@
 import pandas as pd
 import pickle
-from selenium_mr.analysis import filterPrint
+from analysis import filterPrint
 import time
 
 class Timer():
@@ -13,10 +13,10 @@ class Timer():
         elapsed = time.time() - self.start
         print('Time elapsed:', elapsed)
 
-pages_to_scan = 10
+# pages_to_scan = 10
 
-with Timer():
-    DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
+# with Timer():
+#     DBdata = pd.read_hdf('../data/item_info.h5', 'csgo')
 
 # with open('../data/pickletest', 'wb') as f:
 #     pickle.dump(DBdata, f)
@@ -48,6 +48,14 @@ with Timer():
 
 # print('Max index:', DBdata.index[-1])
 
-# matches = pd.read_hdf('../data/LTTQHitems.h5', 'csgo')
-# filterPrint(matches, printval=10000, keys=['Item Name', 'Buy Rate', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio'])
-# print(len(matches.index))
+matches = pd.read_hdf('../data/LTTQHitems.h5', 'csgo')
+# filterPrint(matches, printval=100, keys=['Item Name', 'Buy Rate', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio'])
+print(len(matches.index))
+matches = matches[matches['Ratio'] >= 1.15]
+print(len(matches.index))
+matches = matches.drop_duplicates(subset=['Item Name', 'Lowest Listing'])
+matches = matches.sort_values('Ratio', ascending=False)
+print(len(matches.index))
+matches = matches[matches['Lowest Listing'] > matches['Buy Rate']]
+print(len(matches.index))
+filterPrint(matches, printval=100, keys=['Item Name', 'Buy Rate', 'Date', 'Sales/Day', 'Lowest Listing', 'Q3', 'Ratio'])

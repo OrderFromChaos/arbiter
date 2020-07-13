@@ -1,5 +1,5 @@
 import pandas as pd
-from selenium_mr.analysis import filterPrint
+from analysis import filterPrint
 from sty import fg
 
 # Pulling missing items accidentally caused some weird data pulls, so this code fixes that by
@@ -11,10 +11,11 @@ from sty import fg
 FIX_TUPLE_CONDITIONS = False
 REMOVE_DUPLICATES = False
 
-REMOVE_URLS = True
-REMOVE_IDS = True
-CONVERT_CONDITION = True
-CONVERT_SPECIAL_TYPE = True
+REMOVE_URLS = False
+REMOVE_IDS = False
+CONVERT_CONDITION = False
+CONVERT_SPECIAL_TYPE = False
+SORT_DF = True
 
 WRITE_TO_FILE = True
 
@@ -75,6 +76,9 @@ if CONVERT_SPECIAL_TYPE:
         'Souvenir': 1
     }
     DBdata['Special Type'] = DBdata['Special Type'].apply(lambda s: to_num[s])
+
+if SORT_DF:
+    DBdata = DBdata.sort_values('Buy Rate', ascending=False)
 
 print(list(DBdata)) # Keys
 print(DBdata['Condition'].unique())

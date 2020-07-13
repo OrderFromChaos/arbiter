@@ -77,7 +77,6 @@ def browseItempage(browser, item, navigation_time, firstscan=False):
     except NoSuchElementException:
         pass
 
-    browser.implicitly_wait(15)
     try:
         prices_element = find_css('#searchResultsRows')
     except NoSuchElementException:
