@@ -44,7 +44,8 @@ pattern = [
     #     'Method': selenium_search,
     #     'Pages': 15,
     #     'Load Time': selenium_loadtime,
-    #     'Verbose': verbose
+    #     'Verbose': verbose,
+    #     'Start 0, halt on full scan': True
     # }
     {
         'Method': json_search,

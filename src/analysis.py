@@ -16,6 +16,7 @@ from datetime import datetime, timedelta    # Volumetric sale filtering based on
 from math import ceil                       # Data analysis use in medians
 from copy import deepcopy                   # Working around Python's habit of shallow copies
 from sty import fg                          # Cross-platform color printing
+import statistics                           # Convenience
 
 def filterPrint(df, printtype='head', printval=10, keys=['Item Name', 'Date', 'Buy Rate', 'Sales/Day'], color=None):
     if printtype == 'head':
@@ -283,15 +284,13 @@ def historicalSelectorDF(df, dateregion):
                                                                     dateregion=dateregion)
     return df
 
-def removeHistoricalOutliers(df, sigma):
+def removeHistoricalOutliers(L, sigma=1):
     # Filter all data points that are greater than sigma away from the mean
-    for i, row in DBdata.iterrows():
-        historical = row['Sales from last month']
-        historical_nums = [x[1] for x in historical]
-        mean = sum(historical_nums)/len(historical_nums)
-        stdev = (sum([(x-mean)**2 for x in historical_nums])/len(historical_nums))**0.5
-        DBdata.at[i,'Sales from last month'] = [x for x in historical if x[0] >= filter_date]
-    return DBdata
+    historical_nums = [x[1] for x in L]
+    mean = statistics.mean(historical_nums)
+    stdev = statistics.stdev(historical_nums)
+    finL = [x for x in L if abs((x[1]-mean)/stdev) <= sigma]
+    return finL
 
 ########################
 
@@ -336,6 +335,8 @@ class LessThanThirdQuartileHistorical:
         satdf = volumeFilter(satdf, 60) # Make quartiles more meaningful
         satdf = historicalSelectorDF(satdf, dateregion)
         satdf = volumeFilter(satdf, 3)
+        satdf['Sales from last month'] = satdf['Sales from last month'].apply(removeHistoricalOutliers, sigma=1.5)
+        satdf = volumeFilter(satdf, 5)
 
         details = satdf['Sales from last month'].apply(quartileHistorical)
         details = pd.DataFrame(details.tolist(), index=details.index, columns=['Q1','Q2','Q3'])
@@ -432,7 +433,7 @@ if __name__ == '__main__':
         actually_sold = phase1sell + phase2sell
         all_profits = [x['Profit'] for x in actually_sold]
         positive_profits = sum([x for x in all_profits if x > 0])
-        negative_profits = sum([x for x in all_profits if x < 0]) - sum([x['Buy Price']-x['Buy Price']/1.15 for x in phase3sell])
+        negative_profits = sum([x for x in all_profits if x < 0]) - sum([x['Buy Price']-x['Buy Price']/(1.15**2) for x in phase3sell])
         net = positive_profits + negative_profits
 
         # Holding stats
