@@ -4,7 +4,7 @@
 
 Built to do arbitrage on the Steam marketplace, or at least recommend to a human when to buy/sell. Arbitrage is defined as differences in pricing an item between different markets or sellers. Sometimes people will sell out for less than the market value; this program tries to swoop in and catch those before someone else does.
 
-In the development process, this ended up leading to the development of a robust framework for data scraping, gathering historical data, and flexible application and development of trading strategies. This will allow for future work on building an ML-based bot for Steam trading.
+In the development process, this ended up leading to a robust framework for data scraping, gathering historical data, and flexible application and development of trading strategies. In the future, I intend to build an ML bot for Steam item pricing on top this foundation.
 
 ### Technical
 
