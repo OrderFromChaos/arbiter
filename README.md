@@ -2,7 +2,7 @@
 
 ### Overview
 
-Built to do arbitrage on the Steam marketplace, or at least recommend to a human when to buy/sell. Arbitrage is defined as differences in pricing an item between different markets or sellers. Sometimes people will sell out for less than the market value; this program tries to swoop in and catch those before someone else does.
+Built to do arbitrage on the Steam marketplace. Arbitrage is defined as differences in pricing an item between different markets or sellers. Sometimes people will sell out for less than the market value; this program tries to swoop in and catch those before someone else does.
 
 In the development process, this ended up leading to a robust framework for data scraping, gathering historical data, and flexible application and development of trading strategies. In the future, I intend to build an ML bot for Steam item pricing on top this foundation.
 
@@ -19,3 +19,12 @@ Once it loads a URL, `src/page_scanner.py` calls `analysis.py` to figure out whe
 - SimpleListingProfit. This strategy looks only at the current listings and buys if the cheapest sale is at least 15% less than than the second cheapest. This is naive as it completely ignores historical context, and doesn't inherently understand monopoly pricing (if there are three sales at 200, 300, and 400 for an item with a market rate of 50, it should NOT buy).
 
 - LessThanThirdQuartileHistorical (LTTQH). This strategy splits the historical sales into quartiles, and decides that if a sale price times 1.15x is less than Q3, then it purchases the item. This is much better as it means we have evidence the item can in theory be sold, but it performs poorly when there is a large and fast item price drop.
+
+### Results
+
+Ultimately we made a small amount of cash (low hundreds), but neither of us were skilled enough at the time to make it anything beyond highly manual. Eventually we moved on to other projects and priorities. Below you can find some runtime images:
+
+
+![This shows the command line output of the code](media/arbiter1.jpeg)
+
+![This shows inventory handling over the course of multiple days](media/arbiter2.jpeg)

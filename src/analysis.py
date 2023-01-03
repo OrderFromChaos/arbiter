@@ -136,7 +136,7 @@ class BackTesterV2:
                     # Add new rightmost region (only for phase1region; phase2region extends to end)
                     previous_end = (unique_name['Purchases'][i-1]['Date'] + timedelta(days=self.liquidation_force_days))
                     if previous_end > p['Buy Date']:
-                        rightaddition = [previousend, p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
+                        rightaddition = [previous_end, p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
                     else:
                         rightaddition = [p['Buy Date'], p['Buy Date'] + timedelta(days=self.liquidation_force_days)]
                     phase1region += historicalSelector(relevant_history, rightaddition)
@@ -157,7 +157,7 @@ class BackTesterV2:
                             break
                     if soldphase1:
                         break
-                    
+
                     # Phase 2 checks
                     soldphase2 = False
                     if self.usefallbackmethod: # Use the intelligent re-estimate function passed along
